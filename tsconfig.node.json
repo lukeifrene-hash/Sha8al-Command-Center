@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "module": "ESNext",
+    "target": "ESNext"
+  },
+  "include": ["src/main/**/*", "src/preload/**/*", "electron-vite.config.ts"]
+}

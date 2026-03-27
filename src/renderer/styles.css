@@ -1,0 +1,59 @@
+@import "tailwindcss";
+
+@theme {
+  --color-dark: #0A0A10;
+  --color-surface: #111118;
+  --color-border: #1a1a2e;
+  --color-accent: #585CF0;
+  --color-accent-light: #8286FF;
+  --color-muted: #9B9BAA;
+
+  --color-storefront: #22c55e;
+  --color-product-ops: #f59e0b;
+  --color-commerce-intel: #8286FF;
+  --color-distribution: #9B9BAA;
+
+  --color-on-track: #22c55e;
+  --color-behind: #ef4444;
+
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background-color: #0A0A10;
+  color: #FFFFFF;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::selection {
+  background-color: rgba(88, 92, 240, 0.3);
+}
+
+/* Custom scrollbar for dark theme */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}

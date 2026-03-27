@@ -1,0 +1,66 @@
+import { useEffect } from 'react'
+import { useStore, initStore } from './store'
+import { TabBar } from './components/TabBar'
+import { StatusBar } from './components/StatusBar'
+import { SwimLaneView } from './views/SwimLaneView'
+import { TaskBoard } from './views/TaskBoard'
+import { AgentHubPlaceholder } from './views/AgentHubPlaceholder'
+
+export default function App() {
+  const { loading, error, activeTab, tracker } = useStore()
+
+  useEffect(() => {
+    initStore()
+  }, [])
+
+  if (loading) {
+    return (
+      <div className="h-screen bg-dark flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-8 h-8 border-2 border-accent border-t-transparent rounded-full animate-spin mx-auto" />
+          <p className="mt-4 text-sm text-muted font-mono">Loading tracker...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (error || !tracker) {
+    return (
+      <div className="h-screen bg-dark flex items-center justify-center">
+        <div className="text-center max-w-md">
+          <div className="text-3xl mb-4">⚠</div>
+          <h2 className="text-lg font-semibold text-white mb-2">No Tracker Found</h2>
+          <p className="text-sm text-muted font-mono">
+            {error || 'talkstore-tracker.json not found.'}
+          </p>
+          <p className="text-sm text-muted mt-2">
+            Run <code className="text-accent font-mono">node scripts/parse-markdown.mjs</code> to generate it.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="h-screen bg-dark flex flex-col overflow-hidden">
+      {/* Draggable title bar region for macOS */}
+      <div
+        className="h-12 flex-shrink-0 flex items-center"
+        style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
+      >
+        <div className="flex items-center gap-3 w-full px-4" style={{ paddingLeft: '80px' }}>
+          <TabBar />
+          <div className="flex-1" />
+          <StatusBar />
+        </div>
+      </div>
+
+      {/* View area */}
+      <div className="flex-1 overflow-auto">
+        {activeTab === 'swim-lane' && <SwimLaneView />}
+        {activeTab === 'task-board' && <TaskBoard />}
+        {activeTab === 'agent-hub' && <AgentHubPlaceholder />}
+      </div>
+    </div>
+  )
+}

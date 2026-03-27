@@ -1,0 +1,21 @@
+{
+  "name": "talkstore-mcp-server",
+  "version": "1.0.0",
+  "description": "MCP server + CLI for the Talkstore Command Center — provides live project context and tracker updates to any AI agent",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "talkstore": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "@types/node": "^22.0.0"
+  }
+}
