@@ -355,10 +355,12 @@ function SwimLane({ lane, milestones, selectedId, onSelect, laneHeight }: SwimLa
       return { milestone: m, y: baseY, xOffset: 0 }
     }
 
-    // Spread nodes horizontally within the week column and offset vertically
-    const xSpread = WEEK_W * 0.6
-    const xOffset = (idx - (total - 1) / 2) * xSpread
-    const yOffset = idx * 18
+    // Spread nodes vertically within the lane, centered around baseY
+    const verticalSpacing = Math.min(60, (laneHeight - 80) / total)
+    const totalSpan = (total - 1) * verticalSpacing
+    const yOffset = idx * verticalSpacing - totalSpan / 2
+    // Small horizontal offset to stagger overlapping nodes
+    const xOffset = idx * (WEEK_W * 0.4)
     return { milestone: m, y: baseY + yOffset, xOffset }
   })
 
