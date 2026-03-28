@@ -340,7 +340,7 @@ interface SwimLaneProps {
 }
 
 function SwimLane({ lane, milestones, selectedId, onSelect, laneHeight }: SwimLaneProps) {
-  // Handle overlapping weeks — spread nodes that share the same week
+  // Handle overlapping weeks — give each node at the same week its own horizontal slot
   const weekGroups = new Map<number, number>()
   milestones.forEach((m) => weekGroups.set(m.week, (weekGroups.get(m.week) || 0) + 1))
 
@@ -355,13 +355,10 @@ function SwimLane({ lane, milestones, selectedId, onSelect, laneHeight }: SwimLa
       return { milestone: m, y: baseY, xOffset: 0 }
     }
 
-    // Spread nodes vertically within the lane, centered around baseY
-    const verticalSpacing = Math.min(60, (laneHeight - 80) / total)
-    const totalSpan = (total - 1) * verticalSpacing
-    const yOffset = idx * verticalSpacing - totalSpan / 2
-    // Small horizontal offset to stagger overlapping nodes
-    const xOffset = idx * (WEEK_W * 0.4)
-    return { milestone: m, y: baseY + yOffset, xOffset }
+    // Place each node in its own full week-width slot starting from the original week
+    // First node stays at week position, second shifts right by one full WEEK_W, etc.
+    const xOffset = idx * WEEK_W
+    return { milestone: m, y: baseY, xOffset }
   })
 
   return (
