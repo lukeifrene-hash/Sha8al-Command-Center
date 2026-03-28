@@ -355,10 +355,12 @@ function SwimLane({ lane, milestones, selectedId, onSelect, laneHeight }: SwimLa
       return { milestone: m, y: baseY, xOffset: 0 }
     }
 
-    // Place each node in its own full week-width slot starting from the original week
-    // First node stays at week position, second shifts right by one full WEEK_W, etc.
-    const xOffset = idx * WEEK_W
-    return { milestone: m, y: baseY, xOffset }
+    // Stack nodes vertically within the same week column
+    // Center the group around baseY with enough spacing for labels
+    const spacing = 70
+    const groupH = (total - 1) * spacing
+    const y = baseY - groupH / 2 + idx * spacing
+    return { milestone: m, y, xOffset: 0 }
   })
 
   return (
