@@ -1,12 +1,13 @@
 @import "tailwindcss";
 
 @theme {
-  --color-dark: #0A0A10;
-  --color-surface: #111118;
-  --color-border: #1a1a2e;
+  --color-dark: var(--theme-dark);
+  --color-surface: var(--theme-surface);
+  --color-border: var(--theme-border);
   --color-accent: #585CF0;
   --color-accent-light: #8286FF;
-  --color-muted: #9B9BAA;
+  --color-muted: var(--theme-muted);
+  --color-primary-text: var(--theme-primary-text);
 
   --color-storefront: #22c55e;
   --color-product-ops: #f59e0b;
@@ -20,22 +21,60 @@
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;
 }
 
+/* Dark theme (default) */
+:root,
+[data-theme="dark"] {
+  --theme-dark: #0A0A10;
+  --theme-surface: #111118;
+  --theme-border: #1a1a2e;
+  --theme-muted: #9B9BAA;
+  --theme-primary-text: #FFFFFF;
+  --theme-scrollbar-thumb: rgba(255, 255, 255, 0.08);
+  --theme-scrollbar-thumb-hover: rgba(255, 255, 255, 0.15);
+  --theme-selection: rgba(88, 92, 240, 0.3);
+  --theme-progress-track: rgba(255, 255, 255, 0.1);
+}
+
+/* Light theme */
+[data-theme="light"] {
+  --theme-dark: #F8F9FA;
+  --theme-surface: #FFFFFF;
+  --theme-border: #E5E7EB;
+  --theme-muted: #6B7280;
+  --theme-primary-text: #1A1A2E;
+  --theme-scrollbar-thumb: rgba(0, 0, 0, 0.12);
+  --theme-scrollbar-thumb-hover: rgba(0, 0, 0, 0.25);
+  --theme-selection: rgba(88, 92, 240, 0.2);
+  --theme-progress-track: rgba(0, 0, 0, 0.1);
+
+  /* Remap Tailwind's white to dark text so text-white, bg-white/N etc. adapt */
+  --color-white: #1A1A2E;
+}
+
+/* In light theme, restore actual white text on accent/colored backgrounds */
+[data-theme="light"] .bg-accent,
+[data-theme="light"] .bg-accent-light,
+[data-theme="light"] .bg-on-track,
+[data-theme="light"] .bg-behind {
+  --color-white: #FFFFFF;
+}
+
 html, body, #root {
   margin: 0;
   padding: 0;
   height: 100%;
-  background-color: #0A0A10;
-  color: #FFFFFF;
+  background-color: var(--theme-dark);
+  color: var(--theme-primary-text);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
 ::selection {
-  background-color: rgba(88, 92, 240, 0.3);
+  background-color: var(--theme-selection);
 }
 
-/* Custom scrollbar for dark theme */
+/* Custom scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -46,12 +85,12 @@ html, body, #root {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--theme-scrollbar-thumb);
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.15);
+  background: var(--theme-scrollbar-thumb-hover);
 }
 
 ::-webkit-scrollbar-corner {

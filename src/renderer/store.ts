@@ -5,6 +5,7 @@ import type { TrackerState } from '../main/parser'
 export type { TrackerState }
 
 export type TabId = 'swim-lane' | 'task-board' | 'agent-hub'
+export type Theme = 'dark' | 'light'
 
 interface AppState {
   // Core data
@@ -16,6 +17,7 @@ interface AppState {
   // UI state
   activeTab: TabId
   selectedMilestoneId: string | null
+  theme: Theme
 
   // Actions
   setTracker: (data: TrackerState) => void
@@ -24,6 +26,7 @@ interface AppState {
   setLoading: (v: boolean) => void
   setError: (err: string | null) => void
   setSynced: (v: boolean) => void
+  toggleTheme: () => void
 
   // Mutation helpers — mutate tracker and trigger auto write-back
   updateTracker: (updater: (draft: TrackerState) => void) => void
@@ -124,6 +127,14 @@ export function isExternalRefreshSuppressed(): boolean {
 
 // ─── Store ───────────────────────────────────────────────────────────────────
 
+function getInitialTheme(): Theme {
+  try {
+    const stored = localStorage.getItem('talkstore-theme')
+    if (stored === 'light' || stored === 'dark') return stored
+  } catch { /* ignore */ }
+  return 'dark'
+}
+
 export const useStore = create<AppState>()((set, get) => ({
   tracker: null,
   loading: true,
@@ -131,6 +142,7 @@ export const useStore = create<AppState>()((set, get) => ({
   synced: false,
   activeTab: 'swim-lane' as TabId,
   selectedMilestoneId: null,
+  theme: getInitialTheme(),
 
   // setTracker: used for loading/external updates — does NOT write back
   setTracker: (data) => set({ tracker: data, error: null }),
@@ -139,6 +151,11 @@ export const useStore = create<AppState>()((set, get) => ({
   setLoading: (v) => set({ loading: v }),
   setError: (err) => set({ error: err }),
   setSynced: (v) => set({ synced: v }),
+  toggleTheme: () => {
+    const next = get().theme === 'dark' ? 'light' : 'dark'
+    try { localStorage.setItem('talkstore-theme', next) } catch { /* ignore */ }
+    set({ theme: next })
+  },
 
   // updateTracker: used for app-initiated mutations — DOES write back
   updateTracker: (updater) => {

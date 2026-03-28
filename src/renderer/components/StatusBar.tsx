@@ -1,5 +1,39 @@
 import { useStore, selectCurrentWeek, selectCurrentPhase, selectTotalSubtasks, selectDoneSubtasks, selectOverallProgress, selectScheduleStatus } from '../store'
 
+function ThemeToggle() {
+  const theme = useStore((s) => s.theme)
+  const toggleTheme = useStore((s) => s.toggleTheme)
+
+  return (
+    <button
+      onClick={toggleTheme}
+      className="flex items-center justify-center w-6 h-6 rounded hover:bg-muted/20 transition-colors text-muted hover:text-primary-text"
+      title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
+      style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+    >
+      {theme === 'dark' ? (
+        /* Sun icon */
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="5" />
+          <line x1="12" y1="1" x2="12" y2="3" />
+          <line x1="12" y1="21" x2="12" y2="23" />
+          <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
+          <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+          <line x1="1" y1="12" x2="3" y2="12" />
+          <line x1="21" y1="12" x2="23" y2="12" />
+          <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
+          <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+        </svg>
+      ) : (
+        /* Moon icon */
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+        </svg>
+      )}
+    </button>
+  )
+}
+
 export function StatusBar() {
   const tracker = useStore((s) => s.tracker)
   const synced = useStore((s) => s.synced)
@@ -32,7 +66,7 @@ export function StatusBar() {
 
       {/* Progress bar */}
       <div className="flex items-center gap-2">
-        <div className="w-24 h-1.5 bg-white/10 rounded-full overflow-hidden">
+        <div className="w-24 h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--theme-progress-track)' }}>
           <div
             className="h-full bg-accent rounded-full transition-all duration-500"
             style={{ width: `${pct}%` }}
@@ -60,6 +94,9 @@ export function StatusBar() {
         <div className={`w-1.5 h-1.5 rounded-full ${synced ? 'bg-on-track' : 'bg-behind'}`} />
         <span className="text-muted text-[10px]">{synced ? 'synced' : 'offline'}</span>
       </div>
+
+      {/* Theme toggle */}
+      <ThemeToggle />
     </div>
   )
 }

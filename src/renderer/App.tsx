@@ -7,11 +7,16 @@ import { TaskBoard } from './views/TaskBoard'
 import { AgentHubPlaceholder } from './views/AgentHubPlaceholder'
 
 export default function App() {
-  const { loading, error, activeTab, tracker } = useStore()
+  const { loading, error, activeTab, tracker, theme } = useStore()
 
   useEffect(() => {
     initStore().catch(err => console.error('Failed to initialize store:', err))
   }, [])
+
+  // Apply theme to root element
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme
+  }, [theme])
 
   if (loading) {
     return (
