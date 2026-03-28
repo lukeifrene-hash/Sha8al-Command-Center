@@ -97,10 +97,30 @@ export function SwimLaneView() {
 
   const phases = tracker.schedule.phases
 
-  const totalContentH = HEADER_H + LANES.length * LANE_H + CHECKLIST_H + MARKER_H
+  // Use a ref to measure the container height and compute dynamic lane heights
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [containerH, setContainerH] = useState(0)
+
+  useEffect(() => {
+    if (!containerRef.current) return
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setContainerH(entry.contentRect.height)
+      }
+    })
+    observer.observe(containerRef.current)
+    return () => observer.disconnect()
+  }, [])
+
+  // Calculate dynamic lane height: fill available space, but never smaller than LANE_H
+  const fixedH = HEADER_H + CHECKLIST_H + MARKER_H
+  const dynamicLaneH = containerH > 0
+    ? Math.max(LANE_H, Math.floor((containerH - fixedH) / LANES.length))
+    : LANE_H
+  const totalContentH = HEADER_H + LANES.length * dynamicLaneH + CHECKLIST_H + MARKER_H
 
   return (
-    <div className="h-full relative overflow-hidden">
+    <div ref={containerRef} className="h-full relative overflow-hidden">
       {/* Main scrollable area */}
       <div
         ref={scrollRef}
@@ -124,7 +144,7 @@ export function SwimLaneView() {
                 left: LABEL_W + (phase.start_week - 1) * WEEK_W,
                 width: (phase.end_week - phase.start_week + 1) * WEEK_W,
                 top: HEADER_H,
-                height: LANES.length * LANE_H + CHECKLIST_H,
+                height: LANES.length * dynamicLaneH + CHECKLIST_H,
                 backgroundColor: phase.color + '06',
               }}
             />
@@ -138,7 +158,7 @@ export function SwimLaneView() {
               style={{
                 left: LABEL_W + i * WEEK_W,
                 top: HEADER_H,
-                height: LANES.length * LANE_H + CHECKLIST_H + MARKER_H,
+                height: LANES.length * dynamicLaneH + CHECKLIST_H + MARKER_H,
                 borderLeft: '1px solid rgba(255,255,255,0.03)',
               }}
             />
@@ -152,7 +172,7 @@ export function SwimLaneView() {
               style={{
                 left: LABEL_W + weekX(mm.week),
                 top: HEADER_H,
-                height: LANES.length * LANE_H + CHECKLIST_H,
+                height: LANES.length * dynamicLaneH + CHECKLIST_H,
                 borderLeft: `1.5px dashed ${mm.color}35`,
               }}
             />
@@ -228,6 +248,7 @@ export function SwimLaneView() {
                 milestones={laneMilestones}
                 selectedId={panelTarget?.type === 'milestone' ? panelTarget.id : null}
                 onSelect={(id) => setPanelTarget({ type: 'milestone', id })}
+                laneHeight={dynamicLaneH}
               />
             )
           })}
@@ -315,9 +336,10 @@ interface SwimLaneProps {
   milestones: Milestone[]
   selectedId: string | null
   onSelect: (id: string) => void
+  laneHeight: number
 }
 
-function SwimLane({ lane, milestones, selectedId, onSelect }: SwimLaneProps) {
+function SwimLane({ lane, milestones, selectedId, onSelect, laneHeight }: SwimLaneProps) {
   // Handle overlapping weeks — spread nodes that share the same week
   const weekGroups = new Map<number, number>()
   milestones.forEach((m) => weekGroups.set(m.week, (weekGroups.get(m.week) || 0) + 1))
@@ -327,7 +349,7 @@ function SwimLane({ lane, milestones, selectedId, onSelect }: SwimLaneProps) {
     const idx = weekIndexes.get(m.week) || 0
     weekIndexes.set(m.week, idx + 1)
     const total = weekGroups.get(m.week) || 1
-    const baseY = LANE_H / 2 - 8
+    const baseY = laneHeight / 2 - 8
 
     if (total === 1) {
       return { milestone: m, y: baseY, xOffset: 0 }
@@ -341,7 +363,7 @@ function SwimLane({ lane, milestones, selectedId, onSelect }: SwimLaneProps) {
   })
 
   return (
-    <div className="flex" style={{ height: LANE_H }}>
+    <div className="flex" style={{ height: laneHeight }}>
       {/* Sticky label */}
       <div
         className="flex-shrink-0 sticky left-0 z-20 bg-dark flex items-center justify-center"
@@ -375,7 +397,7 @@ function SwimLane({ lane, milestones, selectedId, onSelect }: SwimLaneProps) {
         <svg
           className="absolute inset-0 pointer-events-none"
           width={TOTAL_W}
-          height={LANE_H}
+          height={laneHeight}
         >
           {nodePositions.map(({ milestone: m, y, xOffset }, i) => {
             if (i === 0) return null
