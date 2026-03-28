@@ -175,6 +175,22 @@ export const TOOL_DEFINITIONS = [
     },
   },
   {
+    name: 'reset_task',
+    description:
+      'OPERATOR ONLY — Reset a task back to "todo" status regardless of its current state. ' +
+      'Clears completion data, blocked state, and assignee. Use to restart a task from scratch.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        task_id: {
+          type: 'string',
+          description: 'The subtask ID to reset',
+        },
+      },
+      required: ['task_id'],
+    },
+  },
+  {
     name: 'approve_task',
     description:
       'OPERATOR ONLY — Approve a task that is in "review" status and move it to "done". ' +
@@ -521,6 +537,8 @@ export async function handleTool(
         return handleBlockTask(args.task_id as string, args.reason as string)
       case 'unblock_task':
         return handleUnblockTask(args.task_id as string, args.resolution as string | undefined)
+      case 'reset_task':
+        return handleResetTask(args.task_id as string)
       case 'approve_task':
         return handleApproveTask(args.task_id as string, args.feedback as string | undefined)
       case 'reject_task':
@@ -1453,6 +1471,48 @@ function handleToggleChecklistItem(itemId: string, done: boolean) {
     content: [{
       type: 'text' as const,
       text: `Checklist item "${itemId}" ${done ? 'completed' : 'unchecked'}.\n\nItem: ${foundItem.label}\nCategory: ${categoryTitle} (${catDone}/${catTotal})`,
+    }],
+  }
+}
+
+function handleResetTask(taskId: string) {
+  const state = readTracker()
+  const match = findTask(state, taskId)
+  if (!match) {
+    return { content: [{ type: 'text' as const, text: `Task "${taskId}" not found.` }], isError: true }
+  }
+
+  const { subtask, milestone } = match
+  const task = milestone.subtasks.find((s) => s.id === taskId)!
+  const previousStatus = task.status
+
+  task.status = 'todo'
+  task.done = false
+  task.assignee = null
+  task.blocked_by = null
+  task.blocked_reason = null
+  task.completed_at = null
+  task.completed_by = null
+  task.last_run_id = null
+
+  state.agent_log.push({
+    id: `log_${Date.now()}`,
+    agent_id: 'luqman',
+    action: 'task_reset',
+    target_type: 'subtask',
+    target_id: taskId,
+    description: `Task reset to todo (was: ${previousStatus})`,
+    timestamp: new Date().toISOString(),
+    tags: ['reset', 'operator'],
+  })
+
+  touchAgent(state, 'luqman')
+  writeTracker(state)
+
+  return {
+    content: [{
+      type: 'text' as const,
+      text: `Task "${taskId}" reset to todo (was: ${previousStatus}).`,
     }],
   }
 }

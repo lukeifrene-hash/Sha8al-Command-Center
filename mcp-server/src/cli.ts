@@ -70,6 +70,7 @@ WRITE COMMANDS:
   complete-task <task_id> "<summary>"     Submit task for review (not done until approved)
   block-task <task_id> "<reason>"         Mark task blocked with reason
   unblock-task <task_id> ["resolution"]     Unblock a blocked task
+  reset-task <task_id>                    OPERATOR: reset any task back to todo
   approve-task <task_id> ["feedback"]     OPERATOR: approve reviewed task → done
   reject-task <task_id> "<feedback>"      OPERATOR: reject reviewed task → in_progress with revision feedback
   update-task <task_id> [--priority P1] [--assignee name] [--mode agent] [--notes "text"]
@@ -164,6 +165,11 @@ async function run() {
     case 'unblock-task':
       toolName = 'unblock_task'
       toolArgs = { task_id: positional[0], ...(positional[1] && { resolution: positional[1] }) }
+      break
+
+    case 'reset-task':
+      toolName = 'reset_task'
+      toolArgs = { task_id: positional[0] }
       break
 
     case 'approve-task':
