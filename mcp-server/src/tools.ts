@@ -109,6 +109,10 @@ export const TOOL_DEFINITIONS = [
           type: 'string',
           description: 'The subtask ID to start',
         },
+        agent_id: {
+          type: 'string',
+          description: 'The agent starting this task (e.g. "builder"). Defaults to "claude_code".',
+        },
       },
       required: ['task_id'],
     },
@@ -129,6 +133,10 @@ export const TOOL_DEFINITIONS = [
         summary: {
           type: 'string',
           description: 'Brief summary of what was done (1-3 sentences)',
+        },
+        agent_id: {
+          type: 'string',
+          description: 'The agent completing this task (e.g. "builder"). Defaults to "claude_code".',
         },
       },
       required: ['task_id', 'summary'],
@@ -254,6 +262,10 @@ export const TOOL_DEFINITIONS = [
           type: 'array',
           items: { type: 'string' },
           description: 'Optional tags for categorization (e.g. ["write", "test", "commit"])',
+        },
+        agent_id: {
+          type: 'string',
+          description: 'The agent making this log entry (e.g. "explorer", "builder", "reviewer", "security", "validator", "compliance"). Defaults to "claude_code" if not provided.',
         },
       },
       required: ['task_id', 'action', 'description'],
@@ -530,9 +542,9 @@ export async function handleTool(
       case 'get_checklist_status':
         return handleGetChecklistStatus()
       case 'start_task':
-        return handleStartTask(args.task_id as string)
+        return handleStartTask(args.task_id as string, args.agent_id as string | undefined)
       case 'complete_task':
-        return handleCompleteTask(args.task_id as string, args.summary as string)
+        return handleCompleteTask(args.task_id as string, args.summary as string, args.agent_id as string | undefined)
       case 'block_task':
         return handleBlockTask(args.task_id as string, args.reason as string)
       case 'unblock_task':
@@ -548,7 +560,8 @@ export async function handleTool(
           args.task_id as string,
           args.action as string,
           args.description as string,
-          (args.tags as string[]) || []
+          (args.tags as string[]) || [],
+          args.agent_id as string | undefined
         )
       case 'update_task':
         return handleUpdateTask(
@@ -677,17 +690,18 @@ function handleGetChecklistStatus() {
 
 // ─── Write Handlers ─────────────────────────────────────────────────────────
 
-function handleStartTask(taskId: string) {
+function handleStartTask(taskId: string, agentId?: string) {
   const state = readTracker()
   const match = findTask(state, taskId)
   if (!match) {
     return { content: [{ type: 'text' as const, text: `Task "${taskId}" not found.` }], isError: true }
   }
 
+  const resolvedAgentId = agentId || 'claude_code'
   const { subtask, milestone } = match
   const task = milestone.subtasks.find((s) => s.id === taskId)!
   task.status = 'in_progress'
-  task.assignee = task.assignee || 'claude_code'
+  task.assignee = task.assignee || resolvedAgentId
 
   const runId = `run_${Date.now()}`
   task.last_run_id = runId
@@ -705,7 +719,7 @@ function handleStartTask(taskId: string) {
 
   state.agent_log.push({
     id: runId,
-    agent_id: 'claude_code',
+    agent_id: resolvedAgentId,
     action: 'task_started',
     target_type: 'subtask',
     target_id: taskId,
@@ -714,7 +728,7 @@ function handleStartTask(taskId: string) {
     tags: ['start', 'mcp'],
   })
 
-  touchAgent(state)
+  touchAgent(state, resolvedAgentId)
   writeTracker(state)
 
   return {
@@ -725,13 +739,14 @@ function handleStartTask(taskId: string) {
   }
 }
 
-function handleCompleteTask(taskId: string, summary: string) {
+function handleCompleteTask(taskId: string, summary: string, agentId?: string) {
   const state = readTracker()
   const match = findTask(state, taskId)
   if (!match) {
     return { content: [{ type: 'text' as const, text: `Task "${taskId}" not found.` }], isError: true }
   }
 
+  const resolvedAgentId = agentId || 'claude_code'
   const { subtask, milestone } = match
   const task = milestone.subtasks.find((s) => s.id === taskId)!
   task.status = 'review'
@@ -741,7 +756,7 @@ function handleCompleteTask(taskId: string, summary: string) {
   const runId = `run_${Date.now()}`
   state.agent_log.push({
     id: runId,
-    agent_id: 'claude_code',
+    agent_id: resolvedAgentId,
     action: 'task_submitted_for_review',
     target_type: 'subtask',
     target_id: taskId,
@@ -754,7 +769,7 @@ function handleCompleteTask(taskId: string, summary: string) {
   const done = milestone.subtasks.filter((s) => s.done).length
   const total = milestone.subtasks.length
 
-  touchAgent(state)
+  touchAgent(state, resolvedAgentId)
   writeTracker(state)
 
   return {
@@ -951,14 +966,16 @@ function handleLogAction(
   taskId: string,
   action: string,
   description: string,
-  tags: string[]
+  tags: string[],
+  agentId?: string
 ) {
   const state = readTracker()
 
+  const resolvedAgentId = agentId || 'claude_code'
   const logId = `log_${Date.now()}`
   state.agent_log.push({
     id: logId,
-    agent_id: 'claude_code',
+    agent_id: resolvedAgentId,
     action,
     target_type: 'subtask',
     target_id: taskId,
@@ -967,13 +984,13 @@ function handleLogAction(
     tags: [...tags, 'mcp'],
   })
 
-  touchAgent(state)
+  touchAgent(state, resolvedAgentId)
   writeTracker(state)
 
   return {
     content: [{
       type: 'text' as const,
-      text: `Logged: [${action}] ${description}`,
+      text: `Logged: [${resolvedAgentId}/${action}] ${description}`,
     }],
   }
 }

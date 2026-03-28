@@ -149,12 +149,12 @@ async function run() {
     // ── Write commands ──
     case 'start-task':
       toolName = 'start_task'
-      toolArgs = { task_id: positional[0] }
+      toolArgs = { task_id: positional[0], ...(flags.agent && { agent_id: flags.agent }) }
       break
 
     case 'complete-task':
       toolName = 'complete_task'
-      toolArgs = { task_id: positional[0], summary: positional[1] }
+      toolArgs = { task_id: positional[0], summary: positional[1], ...(flags.agent && { agent_id: flags.agent }) }
       break
 
     case 'block-task':
@@ -213,6 +213,7 @@ async function run() {
         action: positional[1],
         description: positional[2],
         ...(flags.tags && { tags: flags.tags.split(',') }),
+        ...(flags.agent && { agent_id: flags.agent }),
       }
       break
 
