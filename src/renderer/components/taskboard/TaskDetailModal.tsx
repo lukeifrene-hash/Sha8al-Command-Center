@@ -4,11 +4,8 @@ import type { Subtask, Agent, AgentLogEntry } from '../../../main/parser'
 
 type TabId = 'details' | 'history'
 
-const PRIORITY_STYLES: Record<string, { color: string; bg: string }> = {
-  P1: { color: '#ef4444', bg: 'rgba(239,68,68,0.15)' },
-  P2: { color: '#f59e0b', bg: 'rgba(245,158,11,0.15)' },
-  P3: { color: '#9B9BAA', bg: 'rgba(155,155,170,0.12)' },
-}
+const STEP_STYLE = { color: '#c4b5fd', bg: 'rgba(196,181,253,0.15)' }
+const PARALLEL_STYLE = { color: '#facc15', bg: 'rgba(250,204,21,0.15)' }
 
 const DOMAIN_COLORS: Record<string, string> = {
   foundation: '#585CF0',
@@ -73,7 +70,10 @@ export function TaskDetailModal({
   const siblings = currentMs?.subtasks.filter((s) => s.id !== subtask.id) || []
 
   // Find execution history for this task
-  const taskHistory = agentLog.filter((entry) => entry.target_id === subtask.id)
+  const REVIEW_CYCLE_ACTIONS = ['task_submitted_for_review', 'revision_requested', 'task_approved']
+  const taskHistory = agentLog.filter(
+    (entry) => entry.target_id === subtask.id && REVIEW_CYCLE_ACTIONS.includes(entry.action)
+  )
 
   // Sync blocked status
   useEffect(() => {
@@ -148,15 +148,17 @@ export function TaskDetailModal({
                 >
                   {domain.replace(/_/g, ' ').toUpperCase()}
                 </span>
-                <span
-                  className="text-[9px] font-bold px-1.5 py-0.5 rounded"
-                  style={{
-                    color: PRIORITY_STYLES[priority].color,
-                    backgroundColor: PRIORITY_STYLES[priority].bg,
-                  }}
-                >
-                  {priority}
-                </span>
+                {priority && /^\d+$/.test(priority) && (
+                  <span
+                    className="text-[9px] font-bold px-1.5 py-0.5 rounded"
+                    style={{
+                      color: notes?.includes('🔀') ? PARALLEL_STYLE.color : STEP_STYLE.color,
+                      backgroundColor: notes?.includes('🔀') ? PARALLEL_STYLE.bg : STEP_STYLE.bg,
+                    }}
+                  >
+                    {notes?.includes('🔀') ? `🔀 #${priority}` : `#${priority}`}
+                  </span>
+                )}
                 <span
                   className="text-[9px] px-1.5 py-0.5 rounded"
                   style={{
@@ -332,24 +334,21 @@ function DetailsTab({
           </select>
         </div>
         <div>
-          <label className="block text-[10px] text-muted font-bold tracking-wider mb-1.5">PRIORITY</label>
-          <div className="flex gap-2">
-            {(['P1', 'P2', 'P3'] as const).map((p) => {
-              const s = PRIORITY_STYLES[p]
-              const isActive = priority === p
-              return (
-                <button
-                  key={p}
-                  onClick={() => setPriority(p)}
-                  className={`px-3 py-1.5 rounded text-xs font-bold transition-all border ${
-                    isActive ? 'border-current' : 'border-transparent opacity-50 hover:opacity-75'
-                  }`}
-                  style={{ color: s.color, backgroundColor: s.bg }}
-                >
-                  {p}
-                </button>
-              )
-            })}
+          <label className="block text-[10px] text-muted font-bold tracking-wider mb-1.5">STEP (within week)</label>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              min="1"
+              max="20"
+              value={priority}
+              onChange={(e) => setPriority(e.target.value)}
+              className="w-16 bg-surface border border-border rounded px-3 py-1.5 text-xs text-white font-mono appearance-none hover:border-accent/50 transition-colors focus:outline-none focus:border-accent/50"
+            />
+            {notes?.includes('🔀') && (
+              <span className="text-[10px] font-bold px-2 py-1 rounded" style={{ color: PARALLEL_STYLE.color, backgroundColor: PARALLEL_STYLE.bg }}>
+                🔀 Parallel
+              </span>
+            )}
           </div>
         </div>
       </div>
