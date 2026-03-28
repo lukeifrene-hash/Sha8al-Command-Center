@@ -402,8 +402,8 @@ function SwimLane({ lane, milestones, selectedId, onSelect, laneHeight }: SwimLa
           {nodePositions.map(({ milestone: m, y, xOffset }, i) => {
             if (i === 0) return null
             const prev = nodePositions[i - 1]
-            const x1 = weekX(prev.milestone.week) + prev.xOffset
-            const x2 = weekX(m.week) + xOffset
+            const x1 = Math.max(NODE_R + 4, weekX(prev.milestone.week) + prev.xOffset)
+            const x2 = Math.max(NODE_R + 4, weekX(m.week) + xOffset)
             return (
               <line
                 key={`line-${prev.milestone.id}-${m.id}`}
@@ -452,9 +452,10 @@ function MilestoneNodeWithDrift({ milestone, laneColor, baseY, xOffset, isSelect
   const size = r * 2 + 4
   const circumference = 2 * Math.PI * (r - 3)
 
-  const plannedX = weekX(milestone.week) + xOffset
+  const rawPlannedX = weekX(milestone.week) + xOffset
+  const plannedX = Math.max(r + 4, rawPlannedX) // Clamp so node doesn't clip past left edge
   const driftPx = milestone.drift_days * (WEEK_W / 7)
-  const actualX = plannedX + driftPx
+  const actualX = Math.max(r + 4, plannedX + driftPx)
   const hasDrift = milestone.drift_days !== 0
   const isBehind = milestone.drift_days > 0
 
