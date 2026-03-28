@@ -19,7 +19,7 @@ export interface Subtask {
   blocked_reason: string | null
   completed_at: string | null
   completed_by: string | null
-  priority: 'P1' | 'P2' | 'P3'
+  priority: string
   notes: string | null
   prompt: string | null
   context_files: string[]
@@ -30,6 +30,7 @@ export interface Subtask {
   execution_mode: 'human' | 'agent' | 'pair'
   last_run_id: string | null
   pipeline: Pipeline | null
+  builder_prompt: string | null
 }
 
 export interface Milestone {
