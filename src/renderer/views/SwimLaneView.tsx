@@ -207,6 +207,11 @@ export function SwimLaneView() {
               const w = i + 1
               const isNow = w === currentWeek
               const phase = phases.find((p) => w >= p.start_week && w <= p.end_week)
+              // Compute the start date for this week
+              const startDate = new Date(tracker.project.start_date)
+              startDate.setDate(startDate.getDate() + i * 7)
+              const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+              const dateLabel = `${monthNames[startDate.getMonth()]} ${startDate.getDate()}`
               return (
                 <div
                   key={i}
@@ -221,6 +226,13 @@ export function SwimLaneView() {
                     }`}
                   >
                     W{w}
+                  </span>
+                  <span
+                    className={`text-[8px] font-mono ${
+                      isNow ? 'text-accent/70' : 'text-muted/30'
+                    }`}
+                  >
+                    {dateLabel}
                   </span>
                   {phase && w === phase.start_week && (
                     <span
