@@ -257,8 +257,7 @@ export const TOOL_DEFINITIONS = [
         },
         priority: {
           type: 'string',
-          enum: ['P1', 'P2', 'P3'],
-          description: 'New priority (optional)',
+          description: 'Step number within the week (e.g. "1", "2", "3") — tasks with the same step can run in parallel',
         },
         assignee: {
           type: 'string',
@@ -272,6 +271,51 @@ export const TOOL_DEFINITIONS = [
         notes: {
           type: 'string',
           description: 'New notes for the task (optional)',
+        },
+      },
+      required: ['task_id'],
+    },
+  },
+  {
+    name: 'enrich_task',
+    description:
+      'Write enrichment data to a task after the prepare phase. Updates prompt, acceptance criteria, ' +
+      'constraints, context files, reference docs, and/or the builder_prompt file path. ' +
+      'Only provided fields are updated — omitted fields stay as-is.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        task_id: {
+          type: 'string',
+          description: 'The subtask ID to enrich',
+        },
+        prompt: {
+          type: 'string',
+          description: 'Task prompt/description override (optional)',
+        },
+        builder_prompt: {
+          type: 'string',
+          description: 'Relative path to the per-task prompt file, e.g. "docs/prompts/task-009-scaffold-shopify-remix.md" (optional)',
+        },
+        acceptance_criteria: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Acceptance criteria list (optional, replaces existing)',
+        },
+        constraints: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Constraints list (optional, replaces existing)',
+        },
+        context_files: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Context file paths (optional, replaces existing)',
+        },
+        reference_docs: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Reference doc URLs or paths (optional, replaces existing)',
         },
       },
       required: ['task_id'],
@@ -495,6 +539,16 @@ export async function handleTool(
           args.assignee as string | undefined,
           args.execution_mode as string | undefined,
           args.notes as string | undefined
+        )
+      case 'enrich_task':
+        return handleEnrichTask(
+          args.task_id as string,
+          args.prompt as string | undefined,
+          args.builder_prompt as string | undefined,
+          args.acceptance_criteria as string[] | undefined,
+          args.constraints as string[] | undefined,
+          args.context_files as string[] | undefined,
+          args.reference_docs as string[] | undefined
         )
       case 'add_milestone_note':
         return handleAddMilestoneNote(args.milestone_id as string, args.note as string)
@@ -963,6 +1017,75 @@ function handleUpdateTask(
     content: [{
       type: 'text' as const,
       text: `Task "${taskId}" updated:\n${changes.map((c) => `  - ${c}`).join('\n')}`,
+    }],
+  }
+}
+
+function handleEnrichTask(
+  taskId: string,
+  prompt?: string,
+  builderPrompt?: string,
+  acceptanceCriteria?: string[],
+  constraints?: string[],
+  contextFiles?: string[],
+  referenceDocs?: string[]
+) {
+  const state = readTracker()
+  const match = findTask(state, taskId)
+  if (!match) {
+    return { content: [{ type: 'text' as const, text: `Task "${taskId}" not found.` }], isError: true }
+  }
+
+  const task = match.milestone.subtasks.find((s) => s.id === taskId)!
+  const changes: string[] = []
+
+  if (prompt !== undefined) {
+    task.prompt = prompt || null
+    changes.push('prompt')
+  }
+  if (builderPrompt !== undefined) {
+    task.builder_prompt = builderPrompt || null
+    changes.push(`builder_prompt → ${builderPrompt}`)
+  }
+  if (acceptanceCriteria !== undefined) {
+    task.acceptance_criteria = acceptanceCriteria
+    changes.push(`acceptance_criteria (${acceptanceCriteria.length})`)
+  }
+  if (constraints !== undefined) {
+    task.constraints = constraints
+    changes.push(`constraints (${constraints.length})`)
+  }
+  if (contextFiles !== undefined) {
+    task.context_files = contextFiles
+    changes.push(`context_files (${contextFiles.length})`)
+  }
+  if (referenceDocs !== undefined) {
+    task.reference_docs = referenceDocs
+    changes.push(`reference_docs (${referenceDocs.length})`)
+  }
+
+  if (changes.length === 0) {
+    return { content: [{ type: 'text' as const, text: 'No fields provided to update.' }], isError: true }
+  }
+
+  state.agent_log.push({
+    id: `log_${Date.now()}`,
+    agent_id: 'claude_code',
+    action: 'task_enriched',
+    target_type: 'subtask',
+    target_id: taskId,
+    description: `Enriched: ${changes.join(', ')}`,
+    timestamp: new Date().toISOString(),
+    tags: ['enrichment', 'prepare', 'mcp'],
+  })
+
+  touchAgent(state)
+  writeTracker(state)
+
+  return {
+    content: [{
+      type: 'text' as const,
+      text: `Task "${taskId}" enriched:\n${changes.map((c) => `  - ${c}`).join('\n')}`,
     }],
   }
 }

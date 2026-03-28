@@ -73,6 +73,7 @@ WRITE COMMANDS:
   approve-task <task_id> ["feedback"]     OPERATOR: approve reviewed task → done
   reject-task <task_id> "<feedback>"      OPERATOR: reject reviewed task → in_progress with revision feedback
   update-task <task_id> [--priority P1] [--assignee name] [--mode agent] [--notes "text"]
+  enrich-task <task_id> [--prompt "text"] [--builder-prompt "path"] [--criteria "a|b|c"]  Enrich task fields
   log-action <task_id> <action> "<desc>" [--tags tag1,tag2]
   add-milestone-note <milestone_id> "<note>"
   set-milestone-dates <milestone_id> [--start YYYY-MM-DD] [--end YYYY-MM-DD]
@@ -183,6 +184,19 @@ async function run() {
         ...(flags.assignee && { assignee: flags.assignee }),
         ...(flags.mode && { execution_mode: flags.mode }),
         ...(flags.notes && { notes: flags.notes }),
+      }
+      break
+
+    case 'enrich-task':
+      toolName = 'enrich_task'
+      toolArgs = {
+        task_id: positional[0],
+        ...(flags.prompt && { prompt: flags.prompt }),
+        ...(flags['builder-prompt'] && { builder_prompt: flags['builder-prompt'] }),
+        ...(flags.criteria && { acceptance_criteria: flags.criteria.split('|') }),
+        ...(flags.constraints && { constraints: flags.constraints.split('|') }),
+        ...(flags['context-files'] && { context_files: flags['context-files'].split(',') }),
+        ...(flags['reference-docs'] && { reference_docs: flags['reference-docs'].split(',') }),
       }
       break
 
