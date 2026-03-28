@@ -121,6 +121,18 @@ export function buildTaskContext(
     }
   }
 
+  // ── Builder prompt file ──
+  if (subtask.builder_prompt) {
+    const promptContent = readFileSafe(join(TALKSTORE_ROOT, subtask.builder_prompt))
+    if (promptContent) {
+      sections.push('\n# Task Prompt')
+      sections.push(promptContent)
+    } else {
+      sections.push('\n# Task Prompt')
+      sections.push(`*Warning: builder_prompt path "${subtask.builder_prompt}" not found.*`)
+    }
+  }
+
   // ── Milestone context ──
   sections.push(`\n# Milestone: ${milestone.title}`)
   sections.push(`- **Domain:** ${milestone.domain}`)
