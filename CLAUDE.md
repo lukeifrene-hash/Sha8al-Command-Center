@@ -15,22 +15,37 @@ An Electron desktop app that visualizes and manages the Talkstore build timeline
 Main Process (Node.js)
 ├── index.ts — IPC handlers, file watcher
 ├── config.ts — Path resolution (TALKSTORE_ROOT from .env)
-├── parser.ts — Markdown → tracker JSON generator
-└── promptAssembler.ts — 3-layer prompt assembly for agent dispatch
+└── parser.ts — Markdown → tracker JSON generator
 
 Preload Bridge
-└── index.ts — Exposes window.api.{tracker, prompt} to renderer
+└── index.ts — Exposes window.api.tracker to renderer
 
 Renderer (React SPA)
 ├── store.ts — Zustand store with debounced write-back
 ├── App.tsx — Tab routing (SwimLane, TaskBoard, AgentHub)
 ├── views/ — SwimLaneView, TaskBoard, AgentHubPlaceholder
 └── components/taskboard/ — ContextBar, KanbanColumn, TaskCard, TaskDetailModal
+
+MCP Server (mcp-server/ — separate package)
+├── index.ts — MCP stdio server
+├── tools.ts — 18 tool definitions + handlers
+├── cli.ts — CLI interface (same tools via shell)
+├── context.ts — Context assembly for get_task_context
+└── tracker.ts — Tracker read/write utilities + type definitions
 ```
 
 ## Key Patterns
 
+### Task Execution (MCP)
+All task execution is handled via the MCP server (`mcp-server/`).
+Agents call tools like `start_task`, `complete_task`, `block_task` directly.
+The Electron app is a read-only dashboard — it watches `talkstore-tracker.json`
+for changes and updates the UI in real-time via the file watcher.
+
 ### IPC Channel Pattern
+The Electron app uses one IPC namespace:
+1. `tracker:*` — read/write/fileInfo/updated (state I/O)
+
 Adding a new IPC channel requires changes in 3 files:
 1. `src/main/index.ts` — Add `ipcMain.handle('namespace:method', handler)`
 2. `src/preload/index.ts` — Expose via `contextBridge` under the namespace
@@ -50,7 +65,7 @@ The store auto-writes back to disk with 500ms debounce.
 This app reads from the main Talkstore project at `TALKSTORE_ROOT` (configured in `.env`):
 - `docs/tasks.md` — Canonical task list (parsed into milestones)
 - `docs/submission-checklist.md` — Compliance checklist (parsed separately)
-- `docs/manifesto.md` — Product vision (loaded into Layer 1 prompts)
+- `docs/manifesto.md` — Product vision (loaded into task context by MCP server)
 - `talkstore-tracker.json` — Runtime state file (read/written by app)
 
 ### Do NOT

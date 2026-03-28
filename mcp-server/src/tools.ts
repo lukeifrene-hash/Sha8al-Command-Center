@@ -11,7 +11,6 @@ import {
   type Subtask,
   type Milestone,
 } from './tracker.js'
-import { prepareTask } from './prepareTask.js'
 import {
   buildTaskContext,
   buildProjectStatus,
@@ -153,6 +152,26 @@ export const TOOL_DEFINITIONS = [
         },
       },
       required: ['task_id', 'reason'],
+    },
+  },
+  {
+    name: 'unblock_task',
+    description:
+      'Unblock a task that was previously blocked. Sets status back to "todo" (or "in_progress" if it was previously started). ' +
+      'Clears blocked_by and blocked_reason. Use when the blocker has been resolved.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        task_id: {
+          type: 'string',
+          description: 'The subtask ID to unblock',
+        },
+        resolution: {
+          type: 'string',
+          description: 'Brief description of how the blocker was resolved',
+        },
+      },
+      required: ['task_id'],
     },
   },
   {
@@ -407,26 +426,23 @@ export const TOOL_DEFINITIONS = [
     },
   },
   {
-    name: 'prepare_task',
+    name: 'toggle_checklist_item',
     description:
-      'Dynamically enrich a task before execution. Spawns an Explorer agent to investigate the codebase ' +
-      'and search the web, then a Planner agent to generate acceptance criteria, constraints, context files, ' +
-      'and reference docs based on what actually exists in the codebase right now. Results are written back ' +
-      'to the tracker. This is a LONG-RUNNING operation (typically 5-15 minutes). Call this before starting ' +
-      'work on any task that has empty acceptance_criteria.',
+      'Toggle a submission checklist item as done or not done. The checklist tracks Shopify app review requirements. ' +
+      'Use this when a requirement has been fulfilled or when marking it as incomplete.',
     inputSchema: {
       type: 'object' as const,
       properties: {
-        task_id: {
+        item_id: {
           type: 'string',
-          description: 'The subtask ID to prepare (e.g. "scaffold_auth_chat_shell_001")',
+          description: 'The checklist item ID',
         },
-        force: {
+        done: {
           type: 'boolean',
-          description: 'Re-prepare even if task already has acceptance_criteria (default: false)',
+          description: 'true to mark as complete, false to mark as incomplete',
         },
       },
-      required: ['task_id'],
+      required: ['item_id', 'done'],
     },
   },
 ]
@@ -459,6 +475,8 @@ export async function handleTool(
         return handleCompleteTask(args.task_id as string, args.summary as string)
       case 'block_task':
         return handleBlockTask(args.task_id as string, args.reason as string)
+      case 'unblock_task':
+        return handleUnblockTask(args.task_id as string, args.resolution as string | undefined)
       case 'approve_task':
         return handleApproveTask(args.task_id as string, args.feedback as string | undefined)
       case 'reject_task':
@@ -506,11 +524,8 @@ export async function handleTool(
           args.agent_id as string | undefined,
           (args.limit as number) || 30
         )
-      case 'prepare_task':
-        return await handlePrepareTask(
-          args.task_id as string,
-          (args.force as boolean) ?? false
-        )
+      case 'toggle_checklist_item':
+        return handleToggleChecklistItem(args.item_id as string, args.done as boolean)
       default:
         return { content: [{ type: 'text', text: `Unknown tool: ${name}` }], isError: true }
     }
@@ -710,6 +725,52 @@ function handleBlockTask(taskId: string, reason: string) {
     content: [{
       type: 'text' as const,
       text: `Task "${taskId}" marked as blocked.\n\nReason: ${reason}`,
+    }],
+  }
+}
+
+function handleUnblockTask(taskId: string, resolution?: string) {
+  const state = readTracker()
+  const match = findTask(state, taskId)
+  if (!match) {
+    return { content: [{ type: 'text' as const, text: `Task "${taskId}" not found.` }], isError: true }
+  }
+
+  const { subtask, milestone } = match
+  const task = milestone.subtasks.find((s) => s.id === taskId)!
+
+  if (task.status !== 'blocked') {
+    return {
+      content: [{ type: 'text' as const, text: `Task "${taskId}" is not blocked (current status: ${task.status}).` }],
+      isError: true,
+    }
+  }
+
+  const previousReason = task.blocked_reason
+  task.status = task.last_run_id ? 'in_progress' : 'todo'
+  task.blocked_by = null
+  task.blocked_reason = null
+
+  state.agent_log.push({
+    id: `log_${Date.now()}`,
+    agent_id: 'claude_code',
+    action: 'task_unblocked',
+    target_type: 'subtask',
+    target_id: taskId,
+    description: resolution
+      ? `Unblocked: ${resolution} (was: ${previousReason})`
+      : `Unblocked (was: ${previousReason})`,
+    timestamp: new Date().toISOString(),
+    tags: ['unblocked', 'mcp'],
+  })
+
+  touchAgent(state)
+  writeTracker(state)
+
+  return {
+    content: [{
+      type: 'text' as const,
+      text: `Task "${taskId}" unblocked → ${task.status}.\n\nPrevious blocker: ${previousReason}${resolution ? '\nResolution: ' + resolution : ''}`,
     }],
   }
 }
@@ -1222,29 +1283,53 @@ function touchAgent(state: TrackerState, agentId: string = 'claude_code'): void 
 
 // ─── Prepare Task Handler ───────────────────────────────────────────────────
 
-async function handlePrepareTask(taskId: string, force: boolean) {
-  // Guard: skip if already enriched and not forced
-  if (!force) {
-    const state = readTracker()
-    const match = findTask(state, taskId)
-    if (!match) {
-      return { content: [{ type: 'text' as const, text: `Task "${taskId}" not found.` }], isError: true }
-    }
-    if (match.subtask.acceptance_criteria.length > 0) {
-      return {
-        content: [{
-          type: 'text' as const,
-          text: `Task "${taskId}" already has ${match.subtask.acceptance_criteria.length} acceptance criteria. Use force=true to re-prepare.\n\nCurrent criteria:\n${match.subtask.acceptance_criteria.map((c) => `  - ${c}`).join('\n')}`,
-        }],
-      }
+// ─── Checklist Handler ─────────────────────────────────────────────────────
+
+function handleToggleChecklistItem(itemId: string, done: boolean) {
+  const state = readTracker()
+
+  let foundItem: import('./tracker.js').ChecklistItem | null = null
+  let categoryTitle = ''
+
+  for (const cat of state.submission_checklist.categories) {
+    const item = cat.items.find((i) => i.id === itemId)
+    if (item) {
+      foundItem = item
+      categoryTitle = cat.title
+      break
     }
   }
 
-  const result = await prepareTask(taskId)
+  if (!foundItem) {
+    return { content: [{ type: 'text' as const, text: `Checklist item "${itemId}" not found.` }], isError: true }
+  }
+
+  foundItem.done = done
+  foundItem.completed_at = done ? new Date().toISOString() : null
+  foundItem.completed_by = done ? 'claude_code' : null
+
+  state.agent_log.push({
+    id: `log_${Date.now()}`,
+    agent_id: 'claude_code',
+    action: done ? 'checklist_item_completed' : 'checklist_item_unchecked',
+    target_type: 'checklist',
+    target_id: itemId,
+    description: `${done ? 'Completed' : 'Unchecked'}: ${foundItem.label} (${categoryTitle})`,
+    timestamp: new Date().toISOString(),
+    tags: ['checklist', done ? 'complete' : 'revert', 'mcp'],
+  })
+
+  touchAgent(state)
+  writeTracker(state)
+
+  const cat = state.submission_checklist.categories.find((c) => c.items.some((i) => i.id === itemId))!
+  const catDone = cat.items.filter((i) => i.done).length
+  const catTotal = cat.items.length
+
   return {
     content: [{
       type: 'text' as const,
-      text: result.summary,
+      text: `Checklist item "${itemId}" ${done ? 'completed' : 'unchecked'}.\n\nItem: ${foundItem.label}\nCategory: ${categoryTitle} (${catDone}/${catTotal})`,
     }],
   }
 }

@@ -14,6 +14,12 @@ const DOMAIN_COLORS: Record<string, string> = {
   distribution: '#9B9BAA',
 }
 
+const EXEC_MODE_COLORS: Record<string, string> = {
+  agent: '#ef4444',   // Red
+  human: '#22c55e',   // Green
+  pair: '#3b82f6',    // Blue
+}
+
 const PRIORITY_STYLES: Record<string, { color: string; bg: string }> = {
   P1: { color: '#ef4444', bg: 'rgba(239,68,68,0.15)' },
   P2: { color: '#f59e0b', bg: 'rgba(245,158,11,0.15)' },
@@ -43,6 +49,7 @@ export function TaskCard({ subtask, domain, onClick }: TaskCardProps) {
 
   const domainColor = DOMAIN_COLORS[domain] || '#9B9BAA'
   const priority = PRIORITY_STYLES[subtask.priority] || PRIORITY_STYLES.P3
+  const execModeColor = EXEC_MODE_COLORS[subtask.execution_mode || 'human'] || EXEC_MODE_COLORS.human
   const isInProgress = subtask.status === 'in_progress'
   const isBlocked = subtask.status === 'blocked'
 
@@ -54,17 +61,21 @@ export function TaskCard({ subtask, domain, onClick }: TaskCardProps) {
   return (
     <div
       ref={setNodeRef}
-      style={style}
+      style={{
+        ...style,
+        borderLeftColor: execModeColor,
+        borderLeftWidth: '3px',
+      }}
       {...attributes}
       {...listeners}
       onClick={onClick}
       className={`group relative rounded-lg border bg-surface p-3 cursor-grab active:cursor-grabbing transition-all hover:border-accent/30 ${
         isDragging ? 'opacity-50 shadow-lg shadow-accent/10 scale-[1.02] z-50' : ''
-      } ${isInProgress ? 'border-accent/40' : isBlocked ? 'border-behind/40' : 'border-border'}`}
+      } ${isInProgress ? 'border-accent/40' : isBlocked ? 'border-border' : 'border-border'}`}
     >
-      {/* In-progress left glow */}
+      {/* In-progress pulsing indicator */}
       {isInProgress && (
-        <div className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-accent" />
+        <div className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-accent animate-pulse" />
       )}
 
       {/* Top row: domain tag + priority */}

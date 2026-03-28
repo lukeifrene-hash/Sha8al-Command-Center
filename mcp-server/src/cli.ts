@@ -69,6 +69,7 @@ WRITE COMMANDS:
   start-task <task_id>                    Set task to in_progress
   complete-task <task_id> "<summary>"     Submit task for review (not done until approved)
   block-task <task_id> "<reason>"         Mark task blocked with reason
+  unblock-task <task_id> ["resolution"]     Unblock a blocked task
   approve-task <task_id> ["feedback"]     OPERATOR: approve reviewed task → done
   reject-task <task_id> "<feedback>"      OPERATOR: reject reviewed task → in_progress with revision feedback
   update-task <task_id> [--priority P1] [--assignee name] [--mode agent] [--notes "text"]
@@ -77,7 +78,7 @@ WRITE COMMANDS:
   set-milestone-dates <milestone_id> [--start YYYY-MM-DD] [--end YYYY-MM-DD]
   update-drift <milestone_id> <drift_days>
   register-agent <agent_id> "<name>" <type> [--permissions read,write] [--color "#hex"]
-  prepare-task <task_id> [--force]    Enrich task via Explorer + Planner (5-15 min)
+  toggle-checklist-item <item_id> <true|false>  Toggle a submission checklist item
 `)
 }
 
@@ -159,6 +160,11 @@ async function run() {
       toolArgs = { task_id: positional[0], reason: positional[1] }
       break
 
+    case 'unblock-task':
+      toolName = 'unblock_task'
+      toolArgs = { task_id: positional[0], ...(positional[1] && { resolution: positional[1] }) }
+      break
+
     case 'approve-task':
       toolName = 'approve_task'
       toolArgs = { task_id: positional[0], ...(positional[1] && { feedback: positional[1] }) }
@@ -220,12 +226,9 @@ async function run() {
       }
       break
 
-    case 'prepare-task':
-      toolName = 'prepare_task'
-      toolArgs = {
-        task_id: positional[0],
-        ...(flags.force !== undefined && { force: true }),
-      }
+    case 'toggle-checklist-item':
+      toolName = 'toggle_checklist_item'
+      toolArgs = { item_id: positional[0], done: positional[1] === 'true' }
       break
 
     default:
