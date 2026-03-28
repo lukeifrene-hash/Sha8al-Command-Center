@@ -9,7 +9,7 @@ interface ChecklistSectionProps {
 export function ChecklistSection({ milestoneId }: ChecklistSectionProps) {
   const tracker = useStore((s) => s.tracker)
   const updateTracker = useStore((s) => s.updateTracker)
-  const [collapsed, setCollapsed] = useState(false)
+  const [collapsed, setCollapsed] = useState(true)
 
   if (!tracker) return null
 

@@ -59,6 +59,8 @@ export function SwimLaneView() {
   const tracker = useStore((s) => s.tracker)
   const scrollRef = useRef<HTMLDivElement>(null)
   const [panelTarget, setPanelTarget] = useState<PanelTarget | null>(null)
+  const [isDragging, setIsDragging] = useState(false)
+  const [dragStart, setDragStart] = useState({ x: 0, scrollLeft: 0 })
 
   const currentWeek = tracker ? selectCurrentWeek(tracker) : 1
 
@@ -69,6 +71,27 @@ export function SwimLaneView() {
       scrollRef.current.scrollLeft = Math.max(0, targetX)
     }
   }, [currentWeek])
+
+  function handleMouseDown(e: React.MouseEvent) {
+    // Only drag with left mouse button, and not on interactive elements
+    if (e.button !== 0) return
+    const target = e.target as HTMLElement
+    if (target.closest('button') || target.closest('a')) return
+
+    setIsDragging(true)
+    setDragStart({ x: e.clientX, scrollLeft: scrollRef.current?.scrollLeft || 0 })
+  }
+
+  function handleMouseMove(e: React.MouseEvent) {
+    if (!isDragging || !scrollRef.current) return
+    e.preventDefault()
+    const dx = e.clientX - dragStart.x
+    scrollRef.current.scrollLeft = dragStart.scrollLeft - dx
+  }
+
+  function handleMouseUp() {
+    setIsDragging(false)
+  }
 
   if (!tracker) return null
 
@@ -81,7 +104,11 @@ export function SwimLaneView() {
       {/* Main scrollable area */}
       <div
         ref={scrollRef}
-        className="h-full overflow-auto"
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
+        className={`h-full overflow-auto ${isDragging ? 'cursor-grabbing select-none' : 'cursor-grab'}`}
         style={{ scrollbarWidth: 'thin', scrollbarColor: '#1a1a2e #0A0A10' }}
       >
         <div

@@ -56,7 +56,7 @@ export default function App() {
       </div>
 
       {/* View area */}
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 overflow-hidden">
         {activeTab === 'swim-lane' && <SwimLaneView />}
         {activeTab === 'task-board' && <TaskBoard />}
         {activeTab === 'agent-hub' && <AgentHubPlaceholder />}
