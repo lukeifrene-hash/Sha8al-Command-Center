@@ -35,6 +35,8 @@ export function TaskBoard() {
   const tracker = useStore((s) => s.tracker)
   const updateTracker = useStore((s) => s.updateTracker)
   const setActiveTab = useStore((s) => s.setActiveTab)
+  const selectedMilestoneId = useStore((s) => s.selectedMilestoneId)
+  const setSelectedMilestoneId = useStore((s) => s.setSelectedMilestoneId)
 
   // Sort milestones for consistent ordering across the component
   const stableSortedMilestones = useMemo(() => {
@@ -45,18 +47,28 @@ export function TaskBoard() {
     })
   }, [tracker])
 
-  // Find the current-week milestone as default
-  const defaultIndex = useMemo(() => {
+  // Resolve the active index from the persisted milestone ID (or fall back to current week)
+  const activeMilestoneIndex = useMemo(() => {
+    if (selectedMilestoneId && stableSortedMilestones.length) {
+      const idx = stableSortedMilestones.findIndex((m) => m.id === selectedMilestoneId)
+      if (idx >= 0) return idx
+    }
+    // Default: find the current-week milestone
     if (!stableSortedMilestones.length) return 0
     const week = selectCurrentWeek(tracker!)
-    // Find the first milestone at or after current week, preferring exact match
     const exactIdx = stableSortedMilestones.findIndex((m) => m.week === week)
     if (exactIdx >= 0) return exactIdx
     const afterIdx = stableSortedMilestones.findIndex((m) => m.week >= week)
     return afterIdx >= 0 ? afterIdx : 0
-  }, [stableSortedMilestones, tracker])
+  }, [selectedMilestoneId, stableSortedMilestones, tracker])
 
-  const [activeMilestoneIndex, setActiveMilestoneIndex] = useState(defaultIndex)
+  const handleMilestoneChange = useCallback(
+    (index: number) => {
+      const ms = stableSortedMilestones[index]
+      if (ms) setSelectedMilestoneId(ms.id)
+    },
+    [stableSortedMilestones, setSelectedMilestoneId]
+  )
   const [filter, setFilter] = useState<FilterType>('all')
   const [selectedTask, setSelectedTask] = useState<Subtask | null>(null)
   const [dragActiveId, setDragActiveId] = useState<string | null>(null)
@@ -172,7 +184,7 @@ export function TaskBoard() {
       <ContextBar
         milestones={stableSortedMilestones}
         activeMilestoneIndex={activeMilestoneIndex}
-        onMilestoneChange={setActiveMilestoneIndex}
+        onMilestoneChange={handleMilestoneChange}
       />
 
       {/* 3.2 — Filter bar */}

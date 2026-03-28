@@ -15,10 +15,12 @@ interface AppState {
 
   // UI state
   activeTab: TabId
+  selectedMilestoneId: string | null
 
   // Actions
   setTracker: (data: TrackerState) => void
   setActiveTab: (tab: TabId) => void
+  setSelectedMilestoneId: (id: string | null) => void
   setLoading: (v: boolean) => void
   setError: (err: string | null) => void
   setSynced: (v: boolean) => void
@@ -128,10 +130,12 @@ export const useStore = create<AppState>()((set, get) => ({
   error: null,
   synced: false,
   activeTab: 'swim-lane' as TabId,
+  selectedMilestoneId: null,
 
   // setTracker: used for loading/external updates — does NOT write back
   setTracker: (data) => set({ tracker: data, error: null }),
   setActiveTab: (tab) => set({ activeTab: tab }),
+  setSelectedMilestoneId: (id) => set({ selectedMilestoneId: id }),
   setLoading: (v) => set({ loading: v }),
   setError: (err) => set({ error: err }),
   setSynced: (v) => set({ synced: v }),
