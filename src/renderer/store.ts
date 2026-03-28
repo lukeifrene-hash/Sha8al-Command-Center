@@ -77,7 +77,7 @@ export function selectOverallProgress(tracker: TrackerState | null): number {
 export function selectScheduleStatus(
   tracker: TrackerState | null
 ): 'on_track' | 'behind' | 'ahead' {
-  if (!tracker) return 'on_track'
+  if (!tracker || tracker.milestones.length === 0) return 'on_track'
   const drifts = tracker.milestones.map((m) => m.drift_days)
   const maxBehind = Math.max(0, ...drifts) // positive = behind
   const maxAhead = Math.min(0, ...drifts) // negative = ahead
@@ -163,6 +163,7 @@ export const useStore = create<AppState>()((set, get) => ({
 // ─── Initialize ──────────────────────────────────────────────────────────────
 
 let initialized = false
+let cleanupWatcher: (() => void) | null = null
 
 export async function initStore(): Promise<void> {
   if (initialized) return
@@ -188,7 +189,8 @@ export async function initStore(): Promise<void> {
   }
 
   // Listen for external file changes (from agents writing to tracker.json)
-  window.api.tracker.onUpdated((json: string) => {
+  if (cleanupWatcher) cleanupWatcher()
+  cleanupWatcher = window.api.tracker.onUpdated((json: string) => {
     if (isExternalRefreshSuppressed()) return
     try {
       const data = JSON.parse(json) as TrackerState

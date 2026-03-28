@@ -49,8 +49,8 @@ function startFileWatcher(): void {
   try {
     fileWatcher = fs.watch(TRACKER_PATH, (eventType) => {
       if (eventType === 'change') {
-        // Skip if we just wrote (500ms debounce window)
-        if (Date.now() - lastWriteTime < 600) return
+        // Skip if we just wrote (500ms store debounce + margin)
+        if (Date.now() - lastWriteTime < 1000) return
 
         const content = readTrackerFile()
         if (content && mainWindow) {

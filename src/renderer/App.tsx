@@ -10,7 +10,7 @@ export default function App() {
   const { loading, error, activeTab, tracker } = useStore()
 
   useEffect(() => {
-    initStore()
+    initStore().catch(err => console.error('Failed to initialize store:', err))
   }, [])
 
   if (loading) {
@@ -42,7 +42,7 @@ export default function App() {
   }
 
   return (
-    <div className="h-screen bg-dark flex flex-col overflow-hidden">
+    <div className="h-screen bg-dark flex flex-col">
       {/* Draggable title bar region for macOS */}
       <div
         className="h-12 flex-shrink-0 flex items-center"

@@ -20,11 +20,8 @@ const EXEC_MODE_COLORS: Record<string, string> = {
   pair: '#3b82f6',    // Blue
 }
 
-const PRIORITY_STYLES: Record<string, { color: string; bg: string }> = {
-  P1: { color: '#ef4444', bg: 'rgba(239,68,68,0.15)' },
-  P2: { color: '#f59e0b', bg: 'rgba(245,158,11,0.15)' },
-  P3: { color: '#9B9BAA', bg: 'rgba(155,155,170,0.12)' },
-}
+const STEP_STYLE = { color: '#c4b5fd', bg: 'rgba(196,181,253,0.15)' }
+const PARALLEL_STYLE = { color: '#facc15', bg: 'rgba(250,204,21,0.15)' }
 
 interface TaskCardProps {
   subtask: Subtask
@@ -48,8 +45,12 @@ export function TaskCard({ subtask, domain, onClick }: TaskCardProps) {
   }
 
   const domainColor = DOMAIN_COLORS[domain] || '#9B9BAA'
-  const priority = PRIORITY_STYLES[subtask.priority] || PRIORITY_STYLES.P3
   const execModeColor = EXEC_MODE_COLORS[subtask.execution_mode || 'human'] || EXEC_MODE_COLORS.human
+  const isParallel = subtask.notes?.includes('🔀') ?? false
+  const stepStyle = isParallel ? PARALLEL_STYLE : STEP_STYLE
+  const stepLabel = subtask.priority && /^\d+$/.test(subtask.priority)
+    ? (isParallel ? `🔀 #${subtask.priority}` : `#${subtask.priority}`)
+    : subtask.priority
   const isInProgress = subtask.status === 'in_progress'
   const isBlocked = subtask.status === 'blocked'
 
@@ -88,9 +89,9 @@ export function TaskCard({ subtask, domain, onClick }: TaskCardProps) {
         </span>
         <span
           className="text-[9px] font-bold px-1.5 py-0.5 rounded flex-shrink-0"
-          style={{ color: priority.color, backgroundColor: priority.bg }}
+          style={{ color: stepStyle.color, backgroundColor: stepStyle.bg }}
         >
-          {subtask.priority}
+          {stepLabel}
         </span>
       </div>
 

@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useEffect } from 'react'
 import { useStore, selectTotalSubtasks, selectCurrentWeek, selectCurrentPhase, selectOverallProgress, selectScheduleStatus } from '../store'
 import type { TrackerState } from '../store'
 
@@ -33,12 +33,14 @@ function formatTime(dateStr: string): string {
 
 function isThisWeek(dateStr: string, startDate: string): boolean {
   const d = new Date(dateStr)
-  const start = new Date(startDate + 'T00:00:00Z')
+  const projectStart = new Date(startDate + 'T00:00:00Z')
   const now = new Date()
   const weekStart = new Date(now)
   weekStart.setDate(now.getDate() - now.getDay())
   weekStart.setHours(0, 0, 0, 0)
-  return d >= weekStart
+  // Use the later of project start and calendar week start
+  const effectiveStart = projectStart > weekStart ? projectStart : weekStart
+  return d >= effectiveStart
 }
 
 function isToday(dateStr: string): boolean {
@@ -101,6 +103,13 @@ function LeftColumn({ tracker, synced }: { tracker: TrackerState; synced: boolea
 
 function ConnectedAgentsPanel({ agents }: { agents: Agent[] }) {
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({})
+  const [showConnectInfo, setShowConnectInfo] = useState(false)
+
+  useEffect(() => {
+    if (!showConnectInfo) return
+    const timer = setTimeout(() => setShowConnectInfo(false), 5000)
+    return () => clearTimeout(timer)
+  }, [showConnectInfo])
 
   const toggleGroup = useCallback((groupId: string) => {
     setCollapsedGroups(prev => ({ ...prev, [groupId]: !prev[groupId] }))
@@ -124,7 +133,7 @@ function ConnectedAgentsPanel({ agents }: { agents: Agent[] }) {
     }
 
     const claimed = new Set<string>()
-    const groups = orchestrators.map(o => {
+    const groups: { id: string; orchestrator: Agent | null; children: Agent[] }[] = orchestrators.map(o => {
       const children = agents.filter(a => subAgentOf(a) === o.id)
       children.forEach(c => claimed.add(c.id))
       claimed.add(o.id)
@@ -172,9 +181,18 @@ function ConnectedAgentsPanel({ agents }: { agents: Agent[] }) {
       </div>
 
       {/* Connect New Agent button */}
-      <button className="w-full mt-3 py-2 rounded-lg border border-dashed border-border text-[10px] text-muted font-semibold tracking-wider hover:border-accent/40 hover:text-accent-light transition-colors">
+      <button
+        onClick={() => setShowConnectInfo(true)}
+        className="w-full mt-3 py-2 rounded-lg border border-dashed border-border text-[10px] text-muted font-semibold tracking-wider hover:border-accent/40 hover:text-accent-light transition-colors"
+      >
         + CONNECT NEW AGENT
       </button>
+
+      {showConnectInfo && (
+        <div className="mt-2 px-3 py-2 rounded-md bg-accent/10 border border-accent/20 text-[10px] text-accent-light leading-relaxed">
+          Agents connect automatically via the MCP server. Register new agents using the <span className="font-mono font-semibold">register_agent</span> tool.
+        </div>
+      )}
     </div>
   )
 }

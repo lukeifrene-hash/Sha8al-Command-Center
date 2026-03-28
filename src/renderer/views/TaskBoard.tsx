@@ -145,9 +145,20 @@ export function TaskBoard() {
 
     if (!sourceColumn || !targetColumn || sourceColumn === targetColumn) return
 
+    // Re-read the milestone ID from current store state to avoid stale closure
+    const freshTracker = useStore.getState().tracker
+    const freshSorted = freshTracker
+      ? [...freshTracker.milestones].sort((a, b) => {
+          if (a.week !== b.week) return a.week - b.week
+          return a.title.localeCompare(b.title)
+        })
+      : []
+    const freshMilestone = freshSorted[activeMilestoneIndex]
+    if (!freshMilestone) return
+
     // Update the task status
     updateTracker((draft) => {
-      const ms = draft.milestones.find((m) => m.id === milestone.id)
+      const ms = draft.milestones.find((m) => m.id === freshMilestone.id)
       if (!ms) return
       const task = ms.subtasks.find((s) => s.id === taskId)
       if (!task) return
@@ -198,7 +209,7 @@ export function TaskBoard() {
           onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}
         >
-          <div className="grid grid-cols-4 gap-3 h-full">
+          <div className="grid grid-cols-5 gap-3 h-full">
             {COLUMNS.map((col) => (
               <KanbanColumn
                 key={col.id}

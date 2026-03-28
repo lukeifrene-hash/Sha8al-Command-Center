@@ -21,7 +21,7 @@ export interface Subtask {
   blocked_reason: string | null
   completed_at: string | null
   completed_by: string | null
-  priority: 'P1' | 'P2' | 'P3'
+  priority: string
   notes: string | null
 
   // Prompt layer (agentic task board)

@@ -56,6 +56,17 @@ export function TaskDetailModal({
   const [notes, setNotes] = useState(subtask.notes || '')
   const [executionMode, setExecutionMode] = useState<Subtask['execution_mode']>(subtask.execution_mode || 'human')
 
+  // Issue #2: Sync local state when subtask prop changes (e.g. external MCP agent update)
+  useEffect(() => {
+    setStatus(subtask.status)
+    setAssignee(subtask.assignee || '')
+    setPriority(subtask.priority)
+    setIsBlocked(subtask.status === 'blocked')
+    setBlockedReason(subtask.blocked_reason || '')
+    setNotes(subtask.notes || '')
+    setExecutionMode(subtask.execution_mode || 'human')
+  }, [subtask.status, subtask.assignee, subtask.priority, subtask.notes, subtask.blocked_reason, subtask.execution_mode])
+
   const agents: Agent[] = tracker?.agents || []
   const agentLog: AgentLogEntry[] = tracker?.agent_log || []
   const domainColor = DOMAIN_COLORS[domain] || '#9B9BAA'
@@ -79,7 +90,7 @@ export function TaskDetailModal({
   useEffect(() => {
     if (isBlocked && status !== 'blocked') setStatus('blocked')
     if (!isBlocked && status === 'blocked') setStatus('todo')
-  }, [isBlocked])
+  }, [isBlocked, status])
 
   function doSave() {
     updateTracker((draft) => {
@@ -89,14 +100,22 @@ export function TaskDetailModal({
       if (!task) return
 
       // Details
-      task.status = isBlocked ? 'blocked' : status
-      task.done = status === 'done'
       task.assignee = assignee || null
       task.priority = priority
-      task.blocked_by = isBlocked ? (assignee || 'unknown') : null
-      task.blocked_reason = isBlocked ? (blockedReason || null) : null
       task.notes = notes || null
       task.execution_mode = executionMode
+
+      if (isBlocked) {
+        task.status = 'blocked'
+        task.done = false
+        task.blocked_by = 'operator'
+        task.blocked_reason = blockedReason || null
+      } else {
+        task.status = status
+        task.done = status === 'done'
+        task.blocked_by = null
+        task.blocked_reason = null
+      }
 
       if (status === 'done' && !task.completed_at) {
         task.completed_at = new Date().toISOString()

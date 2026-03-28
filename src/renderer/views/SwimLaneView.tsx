@@ -60,10 +60,7 @@ export function SwimLaneView() {
   const scrollRef = useRef<HTMLDivElement>(null)
   const [panelTarget, setPanelTarget] = useState<PanelTarget | null>(null)
 
-  if (!tracker) return null
-
-  const currentWeek = selectCurrentWeek(tracker)
-  const phases = tracker.schedule.phases
+  const currentWeek = tracker ? selectCurrentWeek(tracker) : 1
 
   // Auto-scroll to current week on mount
   useEffect(() => {
@@ -72,6 +69,10 @@ export function SwimLaneView() {
       scrollRef.current.scrollLeft = Math.max(0, targetX)
     }
   }, [currentWeek])
+
+  if (!tracker) return null
+
+  const phases = tracker.schedule.phases
 
   const totalContentH = HEADER_H + LANES.length * LANE_H + CHECKLIST_H + MARKER_H
 

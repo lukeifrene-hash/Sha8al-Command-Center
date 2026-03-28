@@ -71,7 +71,9 @@ interface PanelProps {
 // ─── Main Panel ───────────────────────────────────────────────────────────────
 
 export function MilestoneDetailPanel({ target, onClose }: PanelProps) {
-  const tracker = useStore((s) => s.tracker)!
+  const tracker = useStore((s) => s.tracker)
+
+  if (!tracker) return null
 
   if (target.type === 'milestone') {
     const milestone = tracker.milestones.find((m) => m.id === target.id)
@@ -93,20 +95,22 @@ function MilestoneView({
   milestone: Milestone
   onClose: () => void
 }) {
-  const tracker = useStore((s) => s.tracker)!
+  const tracker = useStore((s) => s.tracker)
   const updateTracker = useStore((s) => s.updateTracker)
 
   const [editStart, setEditStart] = useState(milestone.planned_start)
   const [editEnd, setEditEnd] = useState(milestone.planned_end)
   const [showRipple, setShowRipple] = useState(false)
   const [newNote, setNewNote] = useState('')
+  const [savedFeedback, setSavedFeedback] = useState(false)
 
+  const milestones = tracker?.milestones ?? []
   const { done, total, pct } = selectMilestoneProgress(milestone)
   const color = DOMAIN_COLORS[milestone.domain] || '#9B9BAA'
 
   const downstream = useMemo(
-    () => findDownstream(milestone.id, tracker.milestones),
-    [milestone.id, tracker.milestones],
+    () => findDownstream(milestone.id, milestones),
+    [milestone.id, milestones],
   )
 
   const startDelta = daysBetween(milestone.planned_start, editStart)
@@ -116,9 +120,9 @@ function MilestoneView({
   const depMilestones = useMemo(
     () =>
       milestone.dependencies
-        .map((depId) => tracker.milestones.find((m) => m.id === depId))
+        .map((depId) => milestones.find((m) => m.id === depId))
         .filter(Boolean) as Milestone[],
-    [milestone.dependencies, tracker.milestones],
+    [milestone.dependencies, milestones],
   )
 
   function toggleSubtask(subtaskId: string) {
@@ -328,11 +332,13 @@ function MilestoneView({
                     setShowRipple(true)
                   } else {
                     applyDateChange()
+                    setSavedFeedback(true)
+                    setTimeout(() => setSavedFeedback(false), 2000)
                   }
                 }}
                 className="px-3 py-1 bg-accent text-white text-[10px] font-bold rounded hover:bg-accent-light transition-colors"
               >
-                Save Dates
+                {savedFeedback ? 'Saved!' : 'Save Dates'}
               </button>
               <button
                 onClick={() => {
@@ -449,7 +455,7 @@ function MilestoneView({
           {milestone.notes.length > 0 && (
             <div className="space-y-1.5 mb-3">
               {milestone.notes.map((note, i) => (
-                <div key={i} className="text-[11px] text-white/70 px-2.5 py-2 rounded-md bg-white/3 leading-relaxed">
+                <div key={`note-${i}-${note.slice(0, 20)}`} className="text-[11px] text-white/70 px-2.5 py-2 rounded-md bg-white/3 leading-relaxed">
                   {note}
                 </div>
               ))}
