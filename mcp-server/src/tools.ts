@@ -7,12 +7,14 @@ import {
   readTracker,
   writeTracker,
   findTask,
+  autoUnblockDependents,
   type TrackerState,
   type Subtask,
   type Milestone,
 } from './tracker.js'
 import {
   buildTaskContext,
+  buildTaskSummary,
   buildProjectStatus,
   buildMilestoneOverview,
   buildChecklistStatus,
@@ -33,6 +35,23 @@ export const TOOL_DEFINITIONS = [
         task_id: {
           type: 'string',
           description: 'The subtask ID (e.g. "scaffold_auth_chat_shell_004")',
+        },
+      },
+      required: ['task_id'],
+    },
+  },
+  {
+    name: 'get_task_summary',
+    description:
+      'Get a slim task summary — ID, label, acceptance criteria, constraints, and context files only. ' +
+      'Use this instead of get_task_context for post-build agents that only need to verify work against acceptance criteria. ' +
+      'Saves ~6,000 tokens vs get_task_context by omitting manifesto, builder prompt, milestone context, and dependencies.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        task_id: {
+          type: 'string',
+          description: 'The subtask ID (e.g. "storefront_tae_004")',
         },
       },
       required: ['task_id'],
@@ -529,6 +548,8 @@ export async function handleTool(
     switch (name) {
       case 'get_task_context':
         return handleGetTaskContext(args.task_id as string)
+      case 'get_task_summary':
+        return handleGetTaskSummary(args.task_id as string)
       case 'get_project_status':
         return handleGetProjectStatus()
       case 'get_milestone_overview':
@@ -632,6 +653,16 @@ function handleGetTaskContext(taskId: string) {
   }
   const context = buildTaskContext(state, match.subtask, match.milestone)
   return { content: [{ type: 'text' as const, text: context }] }
+}
+
+function handleGetTaskSummary(taskId: string) {
+  const state = readTracker()
+  const match = findTask(state, taskId)
+  if (!match) {
+    return { content: [{ type: 'text' as const, text: `Task "${taskId}" not found in tracker.` }], isError: true }
+  }
+  const summary = buildTaskSummary(state, match.subtask, match.milestone)
+  return { content: [{ type: 'text' as const, text: summary }] }
 }
 
 function handleGetProjectStatus() {
@@ -902,6 +933,13 @@ function handleApproveTask(taskId: string, feedback?: string) {
   if (done === total && !milestone.actual_end) {
     milestone.actual_end = new Date().toISOString().split('T')[0]
     extras.push(`Milestone "${milestone.title}" fully complete — actual_end set to ${milestone.actual_end}`)
+  }
+
+  // Auto-unblock tasks whose dependencies are now satisfied
+  const unblockedMessages = autoUnblockDependents(state, taskId, milestone.id)
+  if (unblockedMessages.length > 0) {
+    extras.push(`\nAuto-unblocked ${unblockedMessages.length} task(s):`)
+    extras.push(...unblockedMessages.map((m) => `  • ${m}`))
   }
 
   touchAgent(state, 'luqman')

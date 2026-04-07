@@ -275,6 +275,53 @@ export function buildMilestoneOverview(milestone: Milestone, state: TrackerState
   return lines.join('\n')
 }
 
+export function buildTaskSummary(
+  state: TrackerState,
+  subtask: Subtask,
+  milestone: Milestone
+): string {
+  const sections: string[] = []
+
+  sections.push(`# Task: ${subtask.label}`)
+  sections.push(`- **ID:** ${subtask.id}`)
+  sections.push(`- **Status:** ${subtask.status}`)
+  sections.push(`- **Domain:** ${milestone.domain}`)
+
+  if (subtask.acceptance_criteria.length > 0) {
+    sections.push('\n## Acceptance Criteria')
+    for (const c of subtask.acceptance_criteria) {
+      sections.push(`- [ ] ${c}`)
+    }
+  }
+
+  if (subtask.constraints.length > 0) {
+    sections.push('\n## Constraints')
+    for (const c of subtask.constraints) {
+      sections.push(`- ${c}`)
+    }
+  }
+
+  if (subtask.context_files.length > 0) {
+    sections.push('\n## Context Files')
+    for (const f of subtask.context_files) {
+      sections.push(`- \`${f}\``)
+    }
+  }
+
+  // Revision history — auditor must know about prior feedback
+  const revisions = state.agent_log.filter(
+    (e) => e.target_id === subtask.id && e.action === 'revision_requested'
+  )
+  if (revisions.length > 0) {
+    sections.push(`\n## Revision History (${revisions.length})`)
+    for (const rev of revisions) {
+      sections.push(`- ${rev.description}`)
+    }
+  }
+
+  return sections.join('\n')
+}
+
 export function buildChecklistStatus(state: TrackerState): string {
   const lines: string[] = []
   lines.push('# Submission Checklist')
