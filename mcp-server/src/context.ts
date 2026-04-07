@@ -65,7 +65,8 @@ function formatSubtaskStatus(s: Subtask): string {
 export function buildTaskContext(
   state: TrackerState,
   subtask: Subtask,
-  milestone: Milestone
+  milestone: Milestone,
+  options: { includeManifesto?: boolean } = {}
 ): string {
   const sections: string[] = []
 
@@ -186,13 +187,15 @@ export function buildTaskContext(
   }
 
   // ── Product context (domain-specific manifesto sections) ──
-  const manifesto = readFileSafe(join(TALKSTORE_ROOT, 'docs/manifesto.md'))
-  if (manifesto) {
-    const sectionTitles = DOMAIN_MANIFESTO_SECTIONS[milestone.domain] || DOMAIN_MANIFESTO_SECTIONS['foundation']
-    const extracted = extractManifestoSections(manifesto, sectionTitles)
-    if (extracted) {
-      sections.push('\n# Product Context (manifesto.md)')
-      sections.push(extracted)
+  if (options.includeManifesto !== false) {
+    const manifesto = readFileSafe(join(TALKSTORE_ROOT, 'docs/manifesto.md'))
+    if (manifesto) {
+      const sectionTitles = DOMAIN_MANIFESTO_SECTIONS[milestone.domain] || DOMAIN_MANIFESTO_SECTIONS['foundation']
+      const extracted = extractManifestoSections(manifesto, sectionTitles)
+      if (extracted) {
+        sections.push('\n# Product Context (manifesto.md)')
+        sections.push(extracted)
+      }
     }
   }
 
