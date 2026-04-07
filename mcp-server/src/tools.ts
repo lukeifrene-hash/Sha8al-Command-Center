@@ -110,10 +110,17 @@ export const TOOL_DEFINITIONS = [
     name: 'get_checklist_status',
     description:
       'Get the submission checklist status — all categories with items, completion status, and risk levels. ' +
-      'Critical for understanding what Shopify requires for app approval.',
+      'Critical for understanding what Shopify requires for app approval. ' +
+      'Defaults to showing only incomplete items to save tokens.',
     inputSchema: {
       type: 'object' as const,
-      properties: {},
+      properties: {
+        filter: {
+          type: 'string',
+          enum: ['all', 'incomplete'],
+          description: 'Filter items: "incomplete" (default) shows only unfinished items, "all" shows everything',
+        },
+      },
     },
   },
   {
@@ -561,7 +568,7 @@ export async function handleTool(
           args.domain as string | undefined
         )
       case 'get_checklist_status':
-        return handleGetChecklistStatus()
+        return handleGetChecklistStatus(args.filter as string | undefined)
       case 'start_task':
         return handleStartTask(args.task_id as string, args.agent_id as string | undefined)
       case 'complete_task':
@@ -713,9 +720,9 @@ function handleListTasks(
   return { content: [{ type: 'text' as const, text: lines.join('\n') }] }
 }
 
-function handleGetChecklistStatus() {
+function handleGetChecklistStatus(filter?: string) {
   const state = readTracker()
-  const status = buildChecklistStatus(state)
+  const status = buildChecklistStatus(state, (filter as 'all' | 'incomplete') || 'incomplete')
   return { content: [{ type: 'text' as const, text: status }] }
 }
 

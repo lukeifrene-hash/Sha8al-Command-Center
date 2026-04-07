@@ -66,7 +66,7 @@ export function buildTaskContext(
   state: TrackerState,
   subtask: Subtask,
   milestone: Milestone,
-  options: { includeManifesto?: boolean } = {}
+  options: { includeManifesto?: boolean; includeBuilderPrompt?: boolean } = {}
 ): string {
   const sections: string[] = []
 
@@ -123,14 +123,16 @@ export function buildTaskContext(
   }
 
   // ── Builder prompt file ──
-  if (subtask.builder_prompt) {
-    const promptContent = readFileSafe(join(TALKSTORE_ROOT, subtask.builder_prompt))
-    if (promptContent) {
-      sections.push('\n# Task Prompt')
-      sections.push(promptContent)
-    } else {
-      sections.push('\n# Task Prompt')
-      sections.push(`*Warning: builder_prompt path "${subtask.builder_prompt}" not found.*`)
+  if (options.includeBuilderPrompt !== false) {
+    if (subtask.builder_prompt) {
+      const promptContent = readFileSafe(join(TALKSTORE_ROOT, subtask.builder_prompt))
+      if (promptContent) {
+        sections.push('\n# Task Prompt')
+        sections.push(promptContent)
+      } else {
+        sections.push('\n# Task Prompt')
+        sections.push(`*Warning: builder_prompt path "${subtask.builder_prompt}" not found.*`)
+      }
     }
   }
 
@@ -322,16 +324,25 @@ export function buildTaskSummary(
   return sections.join('\n')
 }
 
-export function buildChecklistStatus(state: TrackerState): string {
+export function buildChecklistStatus(
+  state: TrackerState,
+  filter: 'all' | 'incomplete' = 'incomplete'
+): string {
   const lines: string[] = []
   lines.push('# Submission Checklist')
 
   for (const cat of state.submission_checklist.categories) {
+    const items = filter === 'incomplete'
+      ? cat.items.filter((i) => !i.done)
+      : cat.items
+
+    if (items.length === 0) continue
+
     const done = cat.items.filter((i) => i.done).length
     const total = cat.items.length
     const risk = cat.risk_level === 'critical' ? ' ⚠️ CRITICAL' : ''
     lines.push(`\n## ${cat.title}${risk} (${done}/${total})`)
-    for (const item of cat.items) {
+    for (const item of items) {
       lines.push(`- [${item.done ? 'x' : ' '}] ${item.label}`)
     }
   }
