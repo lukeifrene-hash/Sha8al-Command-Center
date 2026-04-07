@@ -185,13 +185,6 @@ export function buildTaskContext(
     }
   }
 
-  // ── Project conventions ──
-  const claudeMd = readFileSafe(join(TALKSTORE_ROOT, 'CLAUDE.md'))
-  if (claudeMd) {
-    sections.push('\n# Project Conventions (CLAUDE.md)')
-    sections.push(claudeMd)
-  }
-
   // ── Product context (domain-specific manifesto sections) ──
   const manifesto = readFileSafe(join(TALKSTORE_ROOT, 'docs/manifesto.md'))
   if (manifesto) {
