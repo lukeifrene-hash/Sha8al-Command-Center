@@ -36,13 +36,13 @@ export function ReviewView() {
     })
   }
 
-  const addSession = (lane: 'ui' | 'ux' | 'backend') => {
+  const addSession = (lane: 'ui' | 'ux' | 'backend', title: string) => {
+    if (!title.trim()) return
     const id = `review-${lane}-${Date.now()}`
-    const labels = { ui: 'New UI session', ux: 'New UX flow', backend: 'New bug' }
     updateTracker(draft => {
       if (!draft.review_sessions) draft.review_sessions = []
       draft.review_sessions.push({
-        id, lane, title: labels[lane], status: 'not_started', area: '',
+        id, lane, title: title.trim(), status: 'not_started', area: title.trim(),
         checklist: [], priority: lane === 'backend' ? 'P3' : null,
         source: 'manual', created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
       })
@@ -97,7 +97,7 @@ export function ReviewView() {
               onDelete={() => deleteSession(session.id)}
             />
           ))}
-          <NewButton label="+ New session" onClick={() => addSession('ui')} />
+          <NewSessionInput placeholder="Name this session..." onSubmit={(name) => addSession('ui', name)} />
         </DebugLane>
 
         <DebugLane title="UX Flows" color={LANE_COLORS.ux} count={uxFlows.length}>
@@ -111,7 +111,7 @@ export function ReviewView() {
               onDelete={() => deleteSession(flow.id)}
             />
           ))}
-          <NewButton label="+ New session" onClick={() => addSession('ux')} />
+          <NewSessionInput placeholder="Name this flow..." onSubmit={(name) => addSession('ux', name)} />
         </DebugLane>
 
         <DebugLane title="Backend Fixes" color={LANE_COLORS.backend} count={bugs.length}>
@@ -124,7 +124,7 @@ export function ReviewView() {
               onDelete={() => deleteSession(bug.id)}
             />
           ))}
-          <NewButton label="+ Report bug" onClick={() => addSession('backend')} />
+          <NewSessionInput placeholder="Describe the bug..." onSubmit={(name) => addSession('backend', name)} />
         </DebugLane>
       </div>
 
@@ -328,16 +328,57 @@ function StatusBadge({ status }: { status: SessionStatus }) {
   )
 }
 
-// ─── NewButton ──────────────────────────────────────────────────────────────
+// ─── NewSessionInput ────────────────────────────────────────────────────────
 
-function NewButton({ label, onClick }: { label: string; onClick: () => void }) {
+function NewSessionInput({ placeholder, onSubmit }: { placeholder: string; onSubmit: (name: string) => void }) {
+  const [open, setOpen] = useState(false)
+  const [value, setValue] = useState('')
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        className="w-full py-2 rounded-lg border border-dashed border-border text-[10px] text-muted font-semibold tracking-wider hover:border-accent/40 hover:text-accent-light transition-colors"
+      >
+        + New
+      </button>
+    )
+  }
+
+  const handleSubmit = () => {
+    if (value.trim()) {
+      onSubmit(value)
+      setValue('')
+      setOpen(false)
+    }
+  }
+
   return (
-    <button
-      onClick={onClick}
-      className="w-full py-2 rounded-lg border border-dashed border-border text-[10px] text-muted font-semibold tracking-wider hover:border-accent/40 hover:text-accent-light transition-colors"
-    >
-      {label}
-    </button>
+    <div className="flex items-center gap-2">
+      <input
+        autoFocus
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') handleSubmit()
+          if (e.key === 'Escape') { setValue(''); setOpen(false) }
+        }}
+        placeholder={placeholder}
+        className="flex-1 text-[11px] px-3 py-1.5 rounded-md bg-dark border border-border text-white placeholder:text-muted/50 outline-none focus:border-accent/40 transition-colors"
+      />
+      <button
+        onClick={handleSubmit}
+        className="text-[10px] font-semibold text-accent-light hover:text-accent px-2 py-1.5 rounded-md hover:bg-accent/10 transition-colors"
+      >
+        Add
+      </button>
+      <button
+        onClick={() => { setValue(''); setOpen(false) }}
+        className="text-[10px] text-muted hover:text-white px-1.5 py-1.5 transition-colors"
+      >
+        ✕
+      </button>
+    </div>
   )
 }
 
