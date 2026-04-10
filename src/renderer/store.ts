@@ -4,7 +4,7 @@ import type { TrackerState } from '../main/parser'
 // Re-export the type so views can use it without reaching into main/
 export type { TrackerState }
 
-export type TabId = 'swim-lane' | 'task-board' | 'agent-hub'
+export type TabId = 'swim-lane' | 'task-board' | 'agent-hub' | 'review'
 export type Theme = 'dark' | 'light'
 
 interface AppState {
@@ -41,7 +41,18 @@ export function selectCurrentWeek(tracker: TrackerState | null): number {
   const now = new Date()
   const diffMs = now.getTime() - start.getTime()
   if (diffMs < 0) return 1
-  return Math.max(1, Math.min(20, Math.floor(diffMs / (7 * 86400000)) + 1))
+  return Math.max(1, Math.min(12, Math.floor(diffMs / (7 * 86400000)) + 1))
+}
+
+/** Fractional week position for precise NOW marker placement (e.g., 1.85 = day 6 of week 1) */
+export function selectCurrentWeekFractional(tracker: TrackerState | null): number {
+  if (!tracker) return 1
+  const start = new Date(tracker.project.start_date + 'T00:00:00Z')
+  const now = new Date()
+  const diffMs = now.getTime() - start.getTime()
+  if (diffMs < 0) return 1
+  const fractional = diffMs / (7 * 86400000) + 1
+  return Math.max(1, Math.min(12.99, fractional))
 }
 
 /** Resolve phase name for a given week */

@@ -5,6 +5,7 @@ import { StatusBar } from './components/StatusBar'
 import { SwimLaneView } from './views/SwimLaneView'
 import { TaskBoard } from './views/TaskBoard'
 import { AgentHubPlaceholder } from './views/AgentHubPlaceholder'
+import { ReviewView } from './views/ReviewView'
 
 export default function App() {
   const { loading, error, activeTab, tracker, theme } = useStore()
@@ -65,6 +66,7 @@ export default function App() {
         {activeTab === 'swim-lane' && <SwimLaneView />}
         {activeTab === 'task-board' && <TaskBoard />}
         {activeTab === 'agent-hub' && <AgentHubPlaceholder />}
+        {activeTab === 'review' && <ReviewView />}
       </div>
     </div>
   )
