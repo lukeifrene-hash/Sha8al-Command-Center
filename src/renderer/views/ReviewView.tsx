@@ -1,6 +1,5 @@
-import { useState, useMemo } from 'react'
+import { useState } from 'react'
 import { useStore } from '../store'
-import type { TrackerState } from '../store'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -129,6 +128,7 @@ export function ReviewView() {
                   )
                 )
               }}
+              onDelete={() => setUISessions((prev) => prev.filter((s) => s.id !== session.id))}
             />
           ))}
           <NewButton label="+ New session" onClick={() => {
@@ -144,6 +144,7 @@ export function ReviewView() {
               title={flow.title}
               status={flow.status}
               stepCount={flow.stepCount}
+              onDelete={() => setUXFlows((prev) => prev.filter((f) => f.id !== flow.id))}
             />
           ))}
           <NewButton label="+ New session" onClick={() => {
@@ -154,7 +155,13 @@ export function ReviewView() {
 
         <DebugLane title="Backend Fixes" color={LANE_COLORS.backend} count={bugs.length}>
           {bugs.map((bug) => (
-            <BugCard key={bug.id} title={bug.title} priority={bug.priority} source={bug.source} />
+            <BugCard
+              key={bug.id}
+              title={bug.title}
+              priority={bug.priority}
+              source={bug.source}
+              onDelete={() => setBugs((prev) => prev.filter((b) => b.id !== bug.id))}
+            />
           ))}
           <NewButton label="+ Report bug" onClick={() => {
             const id = `bug-${Date.now()}`
@@ -164,7 +171,7 @@ export function ReviewView() {
       </div>
 
       {/* Pre-Submission Review Protocol */}
-      <ReviewProtocolSection tracker={tracker} />
+      <ReviewProtocolSection />
     </div>
   )
 }
@@ -207,17 +214,19 @@ function DebugLane({ title, color, count, children }: {
 
 // ─── SessionCard ────────────────────────────────────────────────────────────
 
-function SessionCard({ title, status, checklist, stepCount, onToggleCheck }: {
+function SessionCard({ title, status, checklist, stepCount, onToggleCheck, onDelete }: {
   title: string
   status: SessionStatus
   checklist?: CheckItem[]
   stepCount?: number
   onToggleCheck?: (idx: number) => void
+  onDelete?: () => void
 }) {
   const [expanded, setExpanded] = useState(false)
+  const [showConfirm, setShowConfirm] = useState(false)
 
   return (
-    <div className="rounded-lg border border-border bg-dark p-3 hover:border-border/80 hover:bg-dark/80 transition-colors">
+    <div className="group rounded-lg border border-border bg-dark p-3 hover:border-border/80 hover:bg-dark/80 transition-colors">
       <div className="flex items-start justify-between gap-2">
         <button
           onClick={() => checklist && checklist.length > 0 && setExpanded(!expanded)}
@@ -225,8 +234,26 @@ function SessionCard({ title, status, checklist, stepCount, onToggleCheck }: {
         >
           {title}
         </button>
-        <StatusBadge status={status} />
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          {onDelete && !showConfirm && (
+            <button
+              onClick={() => setShowConfirm(true)}
+              className="opacity-0 group-hover:opacity-100 text-muted hover:text-red-400 transition-all text-xs px-1"
+              title="Remove"
+            >
+              ✕
+            </button>
+          )}
+          <StatusBadge status={status} />
+        </div>
       </div>
+      {showConfirm && (
+        <div className="flex items-center gap-2 mt-2 pt-2 border-t border-border">
+          <span className="text-[10px] text-muted flex-1">Remove this session?</span>
+          <button onClick={onDelete} className="text-[10px] font-semibold text-red-400 hover:text-red-300 px-1.5 py-0.5 rounded hover:bg-red-400/10 transition-colors">Yes</button>
+          <button onClick={() => setShowConfirm(false)} className="text-[10px] font-semibold text-muted hover:text-white px-1.5 py-0.5 rounded hover:bg-white/5 transition-colors">No</button>
+        </div>
+      )}
 
       {stepCount !== undefined && (
         <div className="text-[10px] text-muted mt-1.5 font-mono">{stepCount} steps</div>
@@ -284,20 +311,39 @@ const PRIORITY_STYLES: Record<string, { bg: string; text: string }> = {
   P3: { bg: 'rgba(155,155,170,0.12)', text: '#9B9BAA' },
 }
 
-function BugCard({ title, priority, source }: { title: string; priority: string; source: string }) {
+function BugCard({ title, priority, source, onDelete }: { title: string; priority: string; source: string; onDelete?: () => void }) {
   const style = PRIORITY_STYLES[priority] ?? PRIORITY_STYLES.P3
+  const [showConfirm, setShowConfirm] = useState(false)
 
   return (
-    <div className="rounded-lg border border-border bg-dark p-3 hover:border-border/80 hover:bg-dark/80 transition-colors">
+    <div className="group rounded-lg border border-border bg-dark p-3 hover:border-border/80 hover:bg-dark/80 transition-colors">
       <div className="flex items-start justify-between gap-2">
         <span className="text-xs text-white font-medium flex-1 min-w-0">{title}</span>
-        <span
-          className="text-[9px] font-bold px-1.5 py-0.5 rounded tracking-wider flex-shrink-0"
-          style={{ backgroundColor: style.bg, color: style.text }}
-        >
-          {priority}
-        </span>
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          {onDelete && !showConfirm && (
+            <button
+              onClick={() => setShowConfirm(true)}
+              className="opacity-0 group-hover:opacity-100 text-muted hover:text-red-400 transition-all text-xs px-1"
+              title="Remove"
+            >
+              ✕
+            </button>
+          )}
+          <span
+            className="text-[9px] font-bold px-1.5 py-0.5 rounded tracking-wider"
+            style={{ backgroundColor: style.bg, color: style.text }}
+          >
+            {priority}
+          </span>
+        </div>
       </div>
+      {showConfirm && (
+        <div className="flex items-center gap-2 mt-2 pt-2 border-t border-border">
+          <span className="text-[10px] text-muted flex-1">Remove this bug?</span>
+          <button onClick={onDelete} className="text-[10px] font-semibold text-red-400 hover:text-red-300 px-1.5 py-0.5 rounded hover:bg-red-400/10 transition-colors">Yes</button>
+          <button onClick={() => setShowConfirm(false)} className="text-[10px] font-semibold text-muted hover:text-white px-1.5 py-0.5 rounded hover:bg-white/5 transition-colors">No</button>
+        </div>
+      )}
       <div className="text-[10px] text-muted mt-1.5 font-mono truncate">{source}</div>
     </div>
   )
@@ -339,77 +385,17 @@ function NewButton({ label, onClick }: { label: string; onClick: () => void }) {
 
 // ─── ReviewProtocolSection ──────────────────────────────────────────────────
 
-function ReviewProtocolSection({ tracker }: { tracker: TrackerState }) {
-  const reviewMilestone = useMemo(() => {
-    return tracker.milestones.find((m) => m.id === 'pre_submission_review') ?? null
-  }, [tracker.milestones])
-
-  if (!reviewMilestone || reviewMilestone.subtasks.length === 0) {
-    return (
-      <div className="rounded-lg border border-border p-6">
-        <h2 className="text-sm font-bold tracking-wider text-muted mb-2">PRE-SUBMISSION REVIEW PROTOCOL</h2>
-        <p className="text-xs text-muted">No pre-submission review milestone found in tracker.</p>
-      </div>
-    )
-  }
-
-  const totalChecks = reviewMilestone.subtasks.length
-  const doneChecks = reviewMilestone.subtasks.filter((s) => s.done).length
-  const overallPct = totalChecks > 0 ? Math.round((doneChecks / totalChecks) * 100) : 0
-
+function ReviewProtocolSection() {
   return (
     <div className="rounded-lg border border-border p-5">
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between">
         <div>
           <h2 className="text-sm font-bold tracking-wider text-white">PRE-SUBMISSION REVIEW PROTOCOL</h2>
-          <p className="text-[10px] text-muted mt-0.5">{doneChecks}/{totalChecks} sessions complete</p>
+          <p className="text-[10px] text-muted mt-0.5">8 structured review sessions</p>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="w-24 h-1.5 rounded-full bg-border overflow-hidden">
-            <div
-              className="h-full rounded-full bg-accent transition-all duration-300"
-              style={{ width: `${overallPct}%` }}
-            />
-          </div>
-          <span className="text-[10px] font-mono text-accent-light">{overallPct}%</span>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-4 gap-3">
-        {reviewMilestone.subtasks.map((subtask, idx) => {
-          const checksDone = subtask.done ? subtask.acceptance_criteria.length : 0
-          const checksTotal = subtask.acceptance_criteria.length || 1
-          const pct = subtask.done ? 100 : Math.round((checksDone / checksTotal) * 100)
-
-          return (
-            <div
-              key={subtask.id}
-              className="bg-dark rounded-lg border border-border p-3 hover:border-border/80 transition-colors"
-            >
-              <div className="flex items-center gap-2 mb-2">
-                <span className="text-[10px] font-mono text-muted">#{idx + 1}</span>
-                <StatusBadge status={subtask.done ? 'done' : subtask.status === 'in_progress' ? 'in_progress' : 'not_started'} />
-              </div>
-              <p className="text-[11px] text-white font-medium leading-snug mb-2 line-clamp-2">
-                {subtask.label}
-              </p>
-              <div className="flex items-center gap-1.5">
-                <div className="flex-1 h-1 rounded-full bg-border overflow-hidden">
-                  <div
-                    className="h-full rounded-full transition-all duration-300"
-                    style={{
-                      width: `${pct}%`,
-                      backgroundColor: subtask.done ? '#22c55e' : '#585CF0',
-                    }}
-                  />
-                </div>
-                <span className="text-[9px] text-muted font-mono">
-                  {subtask.done ? checksTotal : checksDone}/{checksTotal}
-                </span>
-              </div>
-            </div>
-          )
-        })}
+        <span className="text-[10px] font-semibold tracking-wider px-2.5 py-1 rounded-md bg-accent/10 text-accent-light">
+          COMING SOON
+        </span>
       </div>
     </div>
   )
