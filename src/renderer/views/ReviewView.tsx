@@ -10,27 +10,6 @@ interface CheckItem {
   done: boolean
 }
 
-interface UISession {
-  id: string
-  title: string
-  status: SessionStatus
-  checklist: CheckItem[]
-}
-
-interface UXFlow {
-  id: string
-  title: string
-  status: SessionStatus
-  stepCount: number
-}
-
-interface Bug {
-  id: string
-  title: string
-  priority: 'P1' | 'P2' | 'P3'
-  source: string
-}
-
 // ─── Lane colors ────────────────────────────────────────────────────────────
 
 const LANE_COLORS = {
@@ -39,50 +18,50 @@ const LANE_COLORS = {
   backend: '#FB923C',
 } as const
 
-// ─── Initial hardcoded data ─────────────────────────────────────────────────
-
-const INITIAL_UI_SESSIONS: UISession[] = [
-  {
-    id: 'ui-1',
-    title: 'Chat page visual polish',
-    status: 'in_progress',
-    checklist: [
-      { label: 'Landing card typography', done: false },
-      { label: 'Message bubble spacing', done: false },
-      { label: 'Input field border radius', done: false },
-      { label: 'Contribution bar alignment', done: false },
-      { label: 'Error banner styling', done: false },
-      { label: 'Approval card responsiveness', done: false },
-    ],
-  },
-  { id: 'ui-2', title: 'Billing page polish', status: 'not_started', checklist: [] },
-  { id: 'ui-3', title: 'History + Settings pages', status: 'not_started', checklist: [] },
-  { id: 'ui-4', title: 'Mobile responsiveness', status: 'not_started', checklist: [] },
-]
-
-const INITIAL_UX_FLOWS: UXFlow[] = [
-  { id: 'ux-1', title: 'First install → onboarding scan', status: 'not_started', stepCount: 8 },
-  { id: 'ux-2', title: 'ASK → RECOMMEND → EXECUTE', status: 'not_started', stepCount: 12 },
-  { id: 'ux-3', title: 'Free → exhaustion → upgrade', status: 'not_started', stepCount: 10 },
-  { id: 'ux-4', title: 'Navigation between all pages', status: 'not_started', stepCount: 6 },
-]
-
-const INITIAL_BUGS: Bug[] = [
-  { id: 'bug-1', title: 'Onboarding scan hides empty state', priority: 'P2', source: 'review_polish_001 revision' },
-]
-
 // ─── Main Component ─────────────────────────────────────────────────────────
 
 export function ReviewView() {
   const tracker = useStore((s) => s.tracker)
-  const [uiSessions, setUISessions] = useState<UISession[]>(INITIAL_UI_SESSIONS)
-  const [uxFlows, setUXFlows] = useState<UXFlow[]>(INITIAL_UX_FLOWS)
-  const [bugs, setBugs] = useState<Bug[]>(INITIAL_BUGS)
-
+  const updateTracker = useStore((s) => s.updateTracker)
   if (!tracker) return null
 
-  const uiInProgress = uiSessions.filter((s) => s.status === 'in_progress').length
-  const uiDone = uiSessions.filter((s) => s.status === 'done').length
+  const sessions = tracker.review_sessions ?? []
+  const uiSessions = sessions.filter(s => s.lane === 'ui')
+  const uxFlows = sessions.filter(s => s.lane === 'ux')
+  const bugs = sessions.filter(s => s.lane === 'backend')
+
+  const deleteSession = (id: string) => {
+    updateTracker(draft => {
+      draft.review_sessions = (draft.review_sessions ?? []).filter(s => s.id !== id)
+    })
+  }
+
+  const addSession = (lane: 'ui' | 'ux' | 'backend') => {
+    const id = `review-${lane}-${Date.now()}`
+    const labels = { ui: 'New UI session', ux: 'New UX flow', backend: 'New bug' }
+    updateTracker(draft => {
+      if (!draft.review_sessions) draft.review_sessions = []
+      draft.review_sessions.push({
+        id, lane, title: labels[lane], status: 'not_started', area: '',
+        checklist: [], priority: lane === 'backend' ? 'P3' : null,
+        source: 'manual', created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+      })
+    })
+  }
+
+  const toggleCheck = (sessionId: string, idx: number) => {
+    updateTracker(draft => {
+      const session = (draft.review_sessions ?? []).find(s => s.id === sessionId)
+      if (!session || idx < 0 || idx >= session.checklist.length) return
+      session.checklist[idx].done = !session.checklist[idx].done
+      session.checklist[idx].checked_at = session.checklist[idx].done ? new Date().toISOString() : null
+      session.updated_at = new Date().toISOString()
+    })
+  }
+
+  const totalSessions = sessions.length
+  const doneSessions = sessions.filter(s => s.status === 'done').length
+  const inProgressSessions = sessions.filter(s => s.status === 'in_progress').length
 
   return (
     <div className="h-full overflow-y-auto p-6 space-y-6">
@@ -99,7 +78,7 @@ export function ReviewView() {
         <StatBox label="Backend Bugs" value={bugs.length} color={LANE_COLORS.backend} />
         <StatBox
           label="Review Progress"
-          value={`${uiDone + uiInProgress}/${uiSessions.length + uxFlows.length + bugs.length}`}
+          value={`${doneSessions + inProgressSessions}/${totalSessions}`}
           color="#585CF0"
           isText
         />
@@ -113,28 +92,12 @@ export function ReviewView() {
               key={session.id}
               title={session.title}
               status={session.status}
-              checklist={session.checklist}
-              onToggleCheck={(idx) => {
-                setUISessions((prev) =>
-                  prev.map((s) =>
-                    s.id === session.id
-                      ? {
-                          ...s,
-                          checklist: s.checklist.map((c, i) =>
-                            i === idx ? { ...c, done: !c.done } : c
-                          ),
-                        }
-                      : s
-                  )
-                )
-              }}
-              onDelete={() => setUISessions((prev) => prev.filter((s) => s.id !== session.id))}
+              checklist={session.checklist.map(c => ({ label: c.label, done: c.done }))}
+              onToggleCheck={(idx) => toggleCheck(session.id, idx)}
+              onDelete={() => deleteSession(session.id)}
             />
           ))}
-          <NewButton label="+ New session" onClick={() => {
-            const id = `ui-${Date.now()}`
-            setUISessions((prev) => [...prev, { id, title: 'New UI session', status: 'not_started', checklist: [] }])
-          }} />
+          <NewButton label="+ New session" onClick={() => addSession('ui')} />
         </DebugLane>
 
         <DebugLane title="UX Flows" color={LANE_COLORS.ux} count={uxFlows.length}>
@@ -143,14 +106,12 @@ export function ReviewView() {
               key={flow.id}
               title={flow.title}
               status={flow.status}
-              stepCount={flow.stepCount}
-              onDelete={() => setUXFlows((prev) => prev.filter((f) => f.id !== flow.id))}
+              checklist={flow.checklist.map(c => ({ label: c.label, done: c.done }))}
+              onToggleCheck={(idx) => toggleCheck(flow.id, idx)}
+              onDelete={() => deleteSession(flow.id)}
             />
           ))}
-          <NewButton label="+ New session" onClick={() => {
-            const id = `ux-${Date.now()}`
-            setUXFlows((prev) => [...prev, { id, title: 'New UX flow', status: 'not_started', stepCount: 0 }])
-          }} />
+          <NewButton label="+ New session" onClick={() => addSession('ux')} />
         </DebugLane>
 
         <DebugLane title="Backend Fixes" color={LANE_COLORS.backend} count={bugs.length}>
@@ -158,15 +119,12 @@ export function ReviewView() {
             <BugCard
               key={bug.id}
               title={bug.title}
-              priority={bug.priority}
-              source={bug.source}
-              onDelete={() => setBugs((prev) => prev.filter((b) => b.id !== bug.id))}
+              priority={bug.priority ?? 'P3'}
+              source={bug.source ?? 'unknown'}
+              onDelete={() => deleteSession(bug.id)}
             />
           ))}
-          <NewButton label="+ Report bug" onClick={() => {
-            const id = `bug-${Date.now()}`
-            setBugs((prev) => [...prev, { id, title: 'New bug', priority: 'P3', source: 'manual' }])
-          }} />
+          <NewButton label="+ Report bug" onClick={() => addSession('backend')} />
         </DebugLane>
       </div>
 

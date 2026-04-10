@@ -28,6 +28,7 @@ export interface Subtask {
   constraints: string[]
   agent_target: 'explorer' | 'planner' | 'builder' | null
   execution_mode: 'human' | 'agent' | 'pair'
+  depends_on: string[]
   last_run_id: string | null
   pipeline: Pipeline | null
   builder_prompt: string | null
@@ -96,6 +97,25 @@ export interface PipelineStep {
   duration_ms: number | null
 }
 
+export interface ReviewCheckItem {
+  label: string
+  done: boolean
+  checked_at: string | null
+}
+
+export interface ReviewSession {
+  id: string
+  lane: 'ui' | 'ux' | 'backend'
+  title: string
+  status: 'not_started' | 'in_progress' | 'done'
+  area: string
+  checklist: ReviewCheckItem[]
+  priority: 'P1' | 'P2' | 'P3' | null
+  source: string | null
+  created_at: string
+  updated_at: string
+}
+
 export interface TrackerState {
   project: {
     name: string
@@ -111,6 +131,7 @@ export interface TrackerState {
     id: string
     name: string
     type: string
+    parent_id?: string
     color: string
     status: string
     permissions: string[]
@@ -119,6 +140,7 @@ export interface TrackerState {
   }[]
   agent_log: AgentLogEntry[]
   schedule: { phases: { id: string; title: string; start_week: number; end_week: number }[] }
+  review_sessions: ReviewSession[]
 }
 
 // ─── Path Resolution ────────────────────────────────────────────────────────
@@ -162,7 +184,10 @@ export const TRACKER_PATH = join(TALKSTORE_ROOT, 'talkstore-tracker.json')
 
 export function readTracker(): TrackerState {
   const json = readFileSync(TRACKER_PATH, 'utf-8')
-  return JSON.parse(json) as TrackerState
+  const state = JSON.parse(json) as TrackerState
+  // Auto-initialize review_sessions if missing (backwards compat)
+  if (!state.review_sessions) state.review_sessions = []
+  return state
 }
 
 export function writeTracker(state: TrackerState): void {
@@ -195,4 +220,99 @@ export function findTask(
     if (subtask) return { subtask, milestone }
   }
   return null
+}
+
+/**
+ * Auto-unblock tasks and milestones whose dependencies are now satisfied.
+ *
+ * Called after a task is approved (done). Checks two levels:
+ * 1. Subtask-level: tasks with `depends_on` containing the completed task ID
+ * 2. Milestone-level: milestones whose `dependencies` list milestone IDs —
+ *    if all subtasks in every dependency milestone are done, unblock blocked
+ *    tasks in the dependent milestone.
+ *
+ * Returns descriptions of what was unblocked for logging.
+ */
+export function autoUnblockDependents(
+  state: TrackerState,
+  completedTaskId: string,
+  completedMilestoneId: string
+): string[] {
+  const unblocked: string[] = []
+
+  // 1. Subtask-level: unblock tasks whose depends_on includes the completed task
+  for (const milestone of state.milestones) {
+    for (const task of milestone.subtasks) {
+      if (task.status !== 'blocked') continue
+      if (!task.depends_on || !task.depends_on.includes(completedTaskId)) continue
+
+      // Check if ALL dependencies in depends_on are now done
+      const allDepsDone = task.depends_on.every((depId) => {
+        const dep = findTask(state, depId)
+        return dep && dep.subtask.done
+      })
+
+      if (allDepsDone) {
+        task.status = 'todo'
+        task.blocked_by = null
+        task.blocked_reason = null
+        unblocked.push(`Task "${task.id}" (${task.label}) → todo (all subtask deps satisfied)`)
+
+        state.agent_log.push({
+          id: `log_${Date.now()}_${task.id}`,
+          agent_id: 'system',
+          action: 'task_auto_unblocked',
+          target_type: 'subtask',
+          target_id: task.id,
+          description: `Auto-unblocked: dependency "${completedTaskId}" is now done. All deps satisfied.`,
+          timestamp: new Date().toISOString(),
+          tags: ['unblocked', 'auto', 'dependency'],
+        })
+      }
+    }
+  }
+
+  // 2. Milestone-level: check milestones that depend on the completed task's milestone
+  const completedMilestone = state.milestones.find((m) => m.id === completedMilestoneId)
+  if (completedMilestone) {
+    const milestoneFullyDone = completedMilestone.subtasks.every((s) => s.done)
+
+    if (milestoneFullyDone) {
+      // Find milestones that list the completed milestone as a dependency
+      for (const downstream of state.milestones) {
+        if (!downstream.dependencies.includes(completedMilestoneId)) continue
+
+        // Check if ALL milestone-level dependencies are fully done
+        const allMilestoneDepsDone = downstream.dependencies.every((depMsId) => {
+          const depMs = state.milestones.find((m) => m.id === depMsId)
+          return depMs && depMs.subtasks.every((s) => s.done)
+        })
+
+        if (!allMilestoneDepsDone) continue
+
+        // Unblock all blocked tasks in this downstream milestone
+        for (const task of downstream.subtasks) {
+          if (task.status !== 'blocked') continue
+
+          task.status = 'todo'
+          task.blocked_by = null
+          task.blocked_reason = null
+          unblocked.push(`Task "${task.id}" (${task.label}) → todo (milestone "${completedMilestoneId}" complete)`)
+
+          state.agent_log.push({
+            id: `log_${Date.now()}_${task.id}`,
+            agent_id: 'system',
+            action: 'task_auto_unblocked',
+            target_type: 'subtask',
+            target_id: task.id,
+            description: `Auto-unblocked: upstream milestone "${completedMilestoneId}" is now fully complete.`,
+            timestamp: new Date().toISOString(),
+            tags: ['unblocked', 'auto', 'milestone-dependency'],
+          })
+        }
+      }
+    }
+  }
+
+  return unblocked
 }

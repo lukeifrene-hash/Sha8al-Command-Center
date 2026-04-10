@@ -31,6 +31,9 @@ export interface Subtask {
   acceptance_criteria: string[]
   constraints: string[]
 
+  // Dependencies (subtask-level)
+  depends_on: string[]
+
   // Execution config
   agent_target: 'explorer' | 'planner' | 'builder' | null
   execution_mode: 'human' | 'agent' | 'pair'
@@ -126,6 +129,41 @@ export interface SchedulePhase {
   end_week: number
 }
 
+export interface WaitlistEntry {
+  week: number
+  count: number
+  note: string | null
+}
+
+export interface WaitlistTracker {
+  domain: string
+  label: string
+  color: string
+  start_week: number
+  end_week: number
+  unit: string
+  entries: WaitlistEntry[]
+}
+
+export interface ReviewCheckItem {
+  label: string
+  done: boolean
+  checked_at: string | null
+}
+
+export interface ReviewSession {
+  id: string
+  lane: 'ui' | 'ux' | 'backend'
+  title: string
+  status: 'not_started' | 'in_progress' | 'done'
+  area: string
+  checklist: ReviewCheckItem[]
+  priority: 'P1' | 'P2' | 'P3' | null
+  source: string | null
+  created_at: string
+  updated_at: string
+}
+
 export interface TrackerState {
   project: {
     name: string
@@ -140,6 +178,8 @@ export interface TrackerState {
   agents: Agent[]
   agent_log: AgentLogEntry[]
   schedule: { phases: SchedulePhase[] }
+  waitlist_tracker?: WaitlistTracker
+  review_sessions: ReviewSession[]
 }
 
 // ─── Reference Data ──────────────────────────────────────────────────────────
@@ -196,7 +236,7 @@ const MILESTONE_META: Record<string, MilestoneMeta> = {
   landing_page_waitlist:
     { domain: 'distribution', phase: 'foundation', week: 1, is_key: false, key_label: null },
   video_teaser:
-    { domain: 'distribution', phase: 'storefront', week: 3, is_key: false, key_label: null },
+    { domain: 'distribution', phase: 'foundation', week: 1, is_key: false, key_label: null },
   distribution_campaigns:
     { domain: 'distribution', phase: 'foundation', week: 1, is_key: false, key_label: null },
 }
@@ -425,6 +465,7 @@ export function parseRoadmap(content: string): Milestone[] {
           reference_docs: [],
           acceptance_criteria: [],
           constraints: [],
+          depends_on: [],
           agent_target: null,
           execution_mode: 'human',
           last_run_id: null,
@@ -554,6 +595,7 @@ export function generateTrackerState(
         { id: 'v1_5', title: 'V1.5', color: '#585CF0', start_week: 17, end_week: 20 },
       ],
     },
+    review_sessions: [],
   }
 }
 
@@ -603,6 +645,7 @@ export function preserveExistingState(newState: TrackerState, existingPath: stri
         s.reference_docs = prev.reference_docs ?? s.reference_docs
         s.acceptance_criteria = prev.acceptance_criteria ?? s.acceptance_criteria
         s.constraints = prev.constraints ?? s.constraints
+        s.depends_on = prev.depends_on ?? s.depends_on
         s.agent_target = prev.agent_target
         s.execution_mode = prev.execution_mode ?? s.execution_mode
         s.last_run_id = prev.last_run_id
@@ -626,6 +669,7 @@ export function preserveExistingState(newState: TrackerState, existingPath: stri
 
   if (existing.agent_log?.length) newState.agent_log = existing.agent_log
   if (existing.agents?.length) newState.agents = existing.agents
+  if ((existing as any).review_sessions?.length) newState.review_sessions = (existing as any).review_sessions
 
   return newState
 }

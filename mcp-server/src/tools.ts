@@ -11,6 +11,7 @@ import {
   type TrackerState,
   type Subtask,
   type Milestone,
+  type ReviewSession,
 } from './tracker.js'
 import {
   buildTaskContext,
@@ -543,6 +544,118 @@ export const TOOL_DEFINITIONS = [
       required: ['item_id', 'done'],
     },
   },
+  {
+    name: 'create_review_session',
+    description:
+      'Create a new review session in the Review tab. Agents should call this at the start of a debug session ' +
+      'to register what they are working on. The lane is auto-classified: "ui" for visual/layout issues, ' +
+      '"ux" for flow/interaction issues, "backend" for logic/data bugs.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        lane: {
+          type: 'string',
+          enum: ['ui', 'ux', 'backend'],
+          description: 'Which debug lane: "ui" (visual/layout), "ux" (flow/interaction), "backend" (logic/data)',
+        },
+        title: {
+          type: 'string',
+          description: 'Session title, e.g. "Chat page visual polish" or "Billing flow walkthrough"',
+        },
+        area: {
+          type: 'string',
+          description: 'App area this covers, e.g. "Chat page", "Billing", "Navigation"',
+        },
+        priority: {
+          type: 'string',
+          enum: ['P1', 'P2', 'P3'],
+          description: 'Priority level (mainly for backend bugs). Defaults to null for UI/UX sessions.',
+        },
+        source: {
+          type: 'string',
+          description: 'Where this session originated, e.g. "review_session_002", "operator_report", "manual"',
+        },
+      },
+      required: ['lane', 'title', 'area'],
+    },
+  },
+  {
+    name: 'add_review_item',
+    description:
+      'Add a checklist item to an existing review session. Call this when you identify a specific issue to fix ' +
+      'or have fixed an issue during a debug session.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        session_id: {
+          type: 'string',
+          description: 'The review session ID',
+        },
+        label: {
+          type: 'string',
+          description: 'Description of the fix/issue, e.g. "Fix button color to #14B8A6"',
+        },
+        done: {
+          type: 'boolean',
+          description: 'Whether this item is already done (default: false). Set to true if reporting a fix you just made.',
+        },
+      },
+      required: ['session_id', 'label'],
+    },
+  },
+  {
+    name: 'check_review_item',
+    description:
+      'Mark a checklist item as done (or undone) in a review session. Call this after fixing an issue.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        session_id: {
+          type: 'string',
+          description: 'The review session ID',
+        },
+        item_index: {
+          type: 'number',
+          description: 'The 0-based index of the checklist item to toggle',
+        },
+        done: {
+          type: 'boolean',
+          description: 'Set to true to mark done, false to uncheck. Defaults to true.',
+        },
+      },
+      required: ['session_id', 'item_index'],
+    },
+  },
+  {
+    name: 'list_review_sessions',
+    description:
+      'List all review sessions, optionally filtered by lane. Returns session IDs, titles, status, and checklist progress.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        lane: {
+          type: 'string',
+          enum: ['ui', 'ux', 'backend'],
+          description: 'Filter by lane (optional)',
+        },
+      },
+    },
+  },
+  {
+    name: 'delete_review_session',
+    description:
+      'Delete a review session from the Review tab.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        session_id: {
+          type: 'string',
+          description: 'The review session ID to delete',
+        },
+      },
+      required: ['session_id'],
+    },
+  },
 ]
 
 // ─── Tool Handlers ──────────────────────────────────────────────────────────
@@ -639,6 +752,19 @@ export async function handleTool(
         )
       case 'toggle_checklist_item':
         return handleToggleChecklistItem(args.item_id as string, args.done as boolean)
+      case 'create_review_session':
+        return handleCreateReviewSession(
+          args.lane as string, args.title as string, args.area as string,
+          args.priority as string | undefined, args.source as string | undefined
+        )
+      case 'add_review_item':
+        return handleAddReviewItem(args.session_id as string, args.label as string, args.done as boolean | undefined)
+      case 'check_review_item':
+        return handleCheckReviewItem(args.session_id as string, args.item_index as number, args.done as boolean | undefined)
+      case 'list_review_sessions':
+        return handleListReviewSessions(args.lane as string | undefined)
+      case 'delete_review_session':
+        return handleDeleteReviewSession(args.session_id as string)
       default:
         return { content: [{ type: 'text', text: `Unknown tool: ${name}` }], isError: true }
     }
@@ -1342,6 +1468,9 @@ function handleListAgents() {
 
     lines.push(`## ${agent.name} (\`${agent.id}\`)`)
     lines.push(`- **Type:** ${agent.type}`)
+    if (agent.parent_id) {
+      lines.push(`- **Parent:** ${agent.parent_id}`)
+    }
     lines.push(`- **Status:** ${status}`)
     lines.push(`- **Permissions:** ${agent.permissions.join(', ') || 'none'}`)
     lines.push(`- **Last action:** ${agent.last_action_at || 'never'}`)
@@ -1374,32 +1503,49 @@ function handleRegisterAgent(
   parentId?: string
 ) {
   const state = readTracker()
+  const finalId = agentId
+  const now = new Date().toISOString()
+  const existing = state.agents.find((a) => a.id === finalId)
 
-  // Check if agent already exists
-  const existing = state.agents.find((a) => a.id === agentId)
   if (existing) {
+    existing.name = name
+    existing.type = type
+    existing.parent_id = parentId
+    existing.color = color || existing.color || '#9B9BAA'
+    existing.permissions = permissions
+    existing.last_action_at = now
+    existing.status = 'active'
+
+    state.agent_log.push({
+      id: `log_${Date.now()}`,
+      agent_id: finalId,
+      action: 'agent_updated',
+      target_type: 'agent',
+      target_id: finalId,
+      description: `Agent updated: ${name} (${type})${parentId ? `, parent ${parentId}` : ''}`,
+      timestamp: now,
+      tags: ['agent', 'update', 'mcp'],
+    })
+
+    writeTracker(state)
+
     return {
       content: [{
         type: 'text' as const,
-        text: `Agent "${agentId}" already exists as "${existing.name}" (${existing.type}).`,
+        text: `Agent updated:\n  ID: ${finalId}\n  Name: ${name}\n  Type: ${type}\n  Parent: ${parentId || 'none'}\n  Permissions: ${permissions.join(', ')}`,
       }],
-      isError: true,
     }
   }
-
-  // For sub-agents, prepend parent ID if not already included
-  const finalId = (type === 'sub-agent' && parentId && !agentId.startsWith(parentId))
-    ? `${parentId}_${agentId}`
-    : agentId
 
   const newAgent = {
     id: finalId,
     name,
     type,
+    parent_id: parentId,
     color: color || '#9B9BAA',
     status: 'active',
     permissions,
-    last_action_at: new Date().toISOString(),
+    last_action_at: now,
     session_action_count: 0,
   }
 
@@ -1411,18 +1557,17 @@ function handleRegisterAgent(
     action: 'agent_registered',
     target_type: 'agent',
     target_id: finalId,
-    description: `New agent registered: ${name} (${type})`,
-    timestamp: new Date().toISOString(),
+    description: `New agent registered: ${name} (${type})${parentId ? `, parent ${parentId}` : ''}`,
+    timestamp: now,
     tags: ['agent', 'register', 'mcp'],
   })
 
-  touchAgent(state)
   writeTracker(state)
 
   return {
     content: [{
       type: 'text' as const,
-      text: `Agent registered:\n  ID: ${finalId}\n  Name: ${name}\n  Type: ${type}\n  Permissions: ${permissions.join(', ')}`,
+      text: `Agent registered:\n  ID: ${finalId}\n  Name: ${name}\n  Type: ${type}\n  Parent: ${parentId || 'none'}\n  Permissions: ${permissions.join(', ')}`,
     }],
   }
 }
@@ -1577,4 +1722,76 @@ function handleResetTask(taskId: string) {
       text: `Task "${taskId}" reset to todo (was: ${previousStatus}).`,
     }],
   }
+}
+
+// ─── Review Session Handlers ──────────────────────────────────────────────
+
+function handleCreateReviewSession(
+  lane: string, title: string, area: string,
+  priority?: string, source?: string
+) {
+  const state = readTracker()
+  const id = `review-${lane}-${Date.now()}`
+  const session: ReviewSession = {
+    id,
+    lane: lane as ReviewSession['lane'],
+    title,
+    status: 'in_progress',
+    area,
+    checklist: [],
+    priority: (priority as ReviewSession['priority']) ?? null,
+    source: source ?? null,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  }
+  state.review_sessions.push(session)
+  writeTracker(state)
+  return { content: [{ type: 'text' as const, text: `Created review session "${title}" (${id}) in ${lane} lane` }] }
+}
+
+function handleAddReviewItem(sessionId: string, label: string, done?: boolean) {
+  const state = readTracker()
+  const session = state.review_sessions.find(s => s.id === sessionId)
+  if (!session) return { content: [{ type: 'text' as const, text: `Session not found: ${sessionId}` }], isError: true }
+  session.checklist.push({ label, done: done ?? false, checked_at: done ? new Date().toISOString() : null })
+  session.updated_at = new Date().toISOString()
+  writeTracker(state)
+  return { content: [{ type: 'text' as const, text: `Added "${label}" to session ${sessionId} (${done ? 'done' : 'pending'})` }] }
+}
+
+function handleCheckReviewItem(sessionId: string, itemIndex: number, done?: boolean) {
+  const state = readTracker()
+  const session = state.review_sessions.find(s => s.id === sessionId)
+  if (!session) return { content: [{ type: 'text' as const, text: `Session not found: ${sessionId}` }], isError: true }
+  if (itemIndex < 0 || itemIndex >= session.checklist.length) {
+    return { content: [{ type: 'text' as const, text: `Invalid item index: ${itemIndex}` }], isError: true }
+  }
+  const target = done ?? true
+  session.checklist[itemIndex].done = target
+  session.checklist[itemIndex].checked_at = target ? new Date().toISOString() : null
+  session.updated_at = new Date().toISOString()
+  writeTracker(state)
+  return { content: [{ type: 'text' as const, text: `Item ${itemIndex} "${session.checklist[itemIndex].label}" → ${target ? 'done' : 'undone'}` }] }
+}
+
+function handleListReviewSessions(lane?: string) {
+  const state = readTracker()
+  let sessions = state.review_sessions
+  if (lane) sessions = sessions.filter(s => s.lane === lane)
+  if (sessions.length === 0) return { content: [{ type: 'text' as const, text: 'No review sessions found.' }] }
+  const lines = sessions.map(s => {
+    const done = s.checklist.filter(c => c.done).length
+    const total = s.checklist.length
+    return `- [${s.lane.toUpperCase()}] ${s.id}: "${s.title}" (${s.status}) — ${done}/${total} items`
+  })
+  return { content: [{ type: 'text' as const, text: lines.join('\n') }] }
+}
+
+function handleDeleteReviewSession(sessionId: string) {
+  const state = readTracker()
+  const idx = state.review_sessions.findIndex(s => s.id === sessionId)
+  if (idx === -1) return { content: [{ type: 'text' as const, text: `Session not found: ${sessionId}` }], isError: true }
+  const removed = state.review_sessions.splice(idx, 1)[0]
+  writeTracker(state)
+  return { content: [{ type: 'text' as const, text: `Deleted session "${removed.title}" (${sessionId})` }] }
 }
