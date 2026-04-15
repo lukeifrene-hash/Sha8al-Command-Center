@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain } from 'electron'
 import path from 'path'
 import fs from 'fs'
 import { TRACKER_PATH } from './config'
+import { commitAndPush } from './git'
 
 let mainWindow: BrowserWindow | null = null
 let fileWatcher: fs.FSWatcher | null = null
@@ -101,6 +102,10 @@ ipcMain.handle('tracker:fileInfo', () => {
   } catch {
     return { exists: false, size: 0, lastModified: null, watcherActive: false }
   }
+})
+
+ipcMain.handle('git:commit-and-push', async () => {
+  return commitAndPush()
 })
 
 // ─── App Lifecycle ───────────────────────────────────────────────────────────
