@@ -1,4 +1,5 @@
 import { useStore, selectCurrentWeek, selectCurrentPhase, selectTotalSubtasks, selectDoneSubtasks, selectOverallProgress, selectScheduleStatus } from '../store'
+import { CommitButton } from './CommitButton'
 
 function ThemeToggle() {
   const theme = useStore((s) => s.theme)
@@ -94,6 +95,9 @@ export function StatusBar() {
         <div className={`w-1.5 h-1.5 rounded-full ${synced ? 'bg-on-track' : 'bg-behind'}`} />
         <span className="text-muted text-[10px]">{synced ? 'synced' : 'offline'}</span>
       </div>
+
+      {/* Commit + push */}
+      <CommitButton />
 
       {/* Theme toggle */}
       <ThemeToggle />
