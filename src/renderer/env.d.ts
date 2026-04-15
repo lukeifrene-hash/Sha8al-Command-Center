@@ -13,9 +13,19 @@ interface TrackerAPI {
   onUpdated(callback: (json: string) => void): () => void
 }
 
+type GitResult =
+  | { status: 'success'; message: string; branch: string; filesChanged: number }
+  | { status: 'nothing' }
+  | { status: 'error'; error: string }
+
+interface GitAPI {
+  commitAndPush(): Promise<GitResult>
+}
+
 interface Window {
   api: {
     platform: string
     tracker: TrackerAPI
+    git: GitAPI
   }
 }

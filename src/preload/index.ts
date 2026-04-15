@@ -24,4 +24,13 @@ contextBridge.exposeInMainWorld('api', {
     },
   },
 
+  // Git operations
+  git: {
+    commitAndPush: (): Promise<
+      | { status: 'success'; message: string; branch: string; filesChanged: number }
+      | { status: 'nothing' }
+      | { status: 'error'; error: string }
+    > => ipcRenderer.invoke('git:commit-and-push'),
+  },
+
 })
