@@ -549,16 +549,15 @@ export const TOOL_DEFINITIONS = [
   {
     name: 'create_review_session',
     description:
-      'Create a new review session in the Review tab. Agents should call this at the start of a debug session ' +
-      'to register what they are working on. The lane is auto-classified: "ui" for visual/layout issues, ' +
-      '"ux" for flow/interaction issues, "backend" for logic/data bugs.',
+      'Create a new QA session. Agents should call this to register a debug or verification session. ' +
+      'Sessions appear in the Open Sessions section of the QA tab.',
     inputSchema: {
       type: 'object' as const,
       properties: {
         lane: {
           type: 'string',
           enum: ['ui', 'ux', 'backend'],
-          description: 'Which debug lane: "ui" (visual/layout), "ux" (flow/interaction), "backend" (logic/data)',
+          description: 'Optional categorization. Defaults to "backend" if omitted.',
         },
         title: {
           type: 'string',
@@ -578,7 +577,7 @@ export const TOOL_DEFINITIONS = [
           description: 'Where this session originated, e.g. "review_session_002", "operator_report", "manual"',
         },
       },
-      required: ['lane', 'title', 'area'],
+      required: ['title'],
     },
   },
   {
@@ -941,7 +940,7 @@ export async function handleTool(
         return handleToggleChecklistItem(args.item_id as string, args.done as boolean)
       case 'create_review_session':
         return handleCreateReviewSession(
-          args.lane as string, args.title as string, args.area as string,
+          (args.lane as string) || 'backend', args.title as string, args.area as string,
           args.priority as string | undefined, args.source as string | undefined
         )
       case 'add_review_item':
