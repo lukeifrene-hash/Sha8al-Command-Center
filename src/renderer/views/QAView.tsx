@@ -328,6 +328,204 @@ function NotBuiltSummary({ groups }: { groups: Group[] }) {
   )
 }
 
+// ── Fixes Section ─────────────────────────────────────────────────────
+
+const SEVERITY_STYLES: Record<string, { bg: string; text: string; label: string; sort: number }> = {
+  critical: { bg: 'rgba(239,68,68,0.15)', text: '#ef4444', label: 'CRITICAL', sort: 0 },
+  major: { bg: 'rgba(245,158,11,0.15)', text: '#f59e0b', label: 'MAJOR', sort: 1 },
+  minor: { bg: 'rgba(155,155,170,0.12)', text: '#9B9BAA', label: 'MINOR', sort: 2 },
+}
+
+interface AggregatedFix {
+  label: string
+  severity: 'critical' | 'major' | 'minor'
+  task_id: string | null
+  task_done: boolean
+  session_title: string
+  session_id: string
+}
+
+const MILESTONE_ID = 'debug_review'
+
+function FixesSection({ sessions, milestones, updateTracker }: {
+  sessions: { id: string; title: string; fixes?: { label: string; severity: string; task_id: string | null }[] }[]
+  milestones: { id: string; subtasks: { id: string; done: boolean }[] }[]
+  updateTracker: (updater: (draft: TrackerState) => void) => void
+}) {
+  // Build a set of done task IDs for quick lookup
+  const doneTaskIds = new Set<string>()
+  for (const ms of milestones) {
+    for (const task of ms.subtasks) {
+      if (task.done) doneTaskIds.add(task.id)
+    }
+  }
+  const allFixes: (AggregatedFix & { fixIndex: number })[] = []
+  for (const session of sessions) {
+    for (let fi = 0; fi < (session.fixes ?? []).length; fi++) {
+      const fix = session.fixes![fi]
+      allFixes.push({
+        label: fix.label,
+        severity: (fix.severity as AggregatedFix['severity']) || 'major',
+        task_id: fix.task_id,
+        task_done: fix.task_id ? doneTaskIds.has(fix.task_id) : false,
+        session_title: session.title,
+        session_id: session.id,
+        fixIndex: fi,
+      })
+    }
+  }
+
+  // Sort: critical first, then major, then minor
+  allFixes.sort((a, b) => (SEVERITY_STYLES[a.severity]?.sort ?? 1) - (SEVERITY_STYLES[b.severity]?.sort ?? 1))
+
+  const completed = allFixes.filter(f => f.task_done)
+  const promoted = allFixes.filter(f => f.task_id && !f.task_done)
+  const pending = allFixes.filter(f => !f.task_id)
+
+  const promoteFix = (sessionId: string, fixIndex: number) => {
+    updateTracker(draft => {
+      const milestone = draft.milestones.find(m => m.id === MILESTONE_ID)
+      if (!milestone) return
+      const session = (draft.review_sessions ?? []).find(s => s.id === sessionId)
+      if (!session?.fixes?.[fixIndex]) return
+      const fix = session.fixes[fixIndex]
+      if (fix.task_id) return // already promoted
+
+      const idPattern = new RegExp(`^${MILESTONE_ID}_(\\d+)$`)
+      const existingNums = milestone.subtasks
+        .map((s: { id: string }) => s.id.match(idPattern))
+        .filter(Boolean)
+        .map((m: RegExpMatchArray) => parseInt(m[1], 10))
+      const nextNum = existingNums.length > 0 ? Math.max(...existingNums) + 1 : 1
+      const taskNum = String(nextNum).padStart(3, '0')
+      const taskId = `${MILESTONE_ID}_${taskNum}`
+      const priorityMap: Record<string, string> = { critical: 'P1', major: 'P2', minor: 'P3' }
+
+      const laneLabel = (session as any).lane === 'ui' ? 'UI' : (session as any).lane === 'ux' ? 'UX' : 'Backend'
+      const notes = [
+        `[${laneLabel}] From: ${session.title}`,
+        `Severity: ${fix.severity}`,
+        ``,
+        `## Verification`,
+        `After fixing, the agent MUST verify the fix before completing the task.`,
+        ``,
+        `### Self-verification (agent does this)`,
+        `For prompt/response issues, classifier bugs, handler routing, or backend logic:`,
+        `- Send a test prompt via the dev test bypass (POST to /api/chat with X-Test-Bypass: local)`,
+        `- Monitor the streamed response and server logs`,
+        `- Confirm the classifier output (domain, verb, confidence)`,
+        `- Confirm the handler produced the expected response`,
+        `- Record the test prompt sent, the classifier result, and the response summary`,
+        ``,
+        `For build/type/lint issues:`,
+        `- Run npm run build && npm run typecheck && npm run lint`,
+        `- Confirm all pass`,
+        ``,
+        `### Operator verification (only if needed)`,
+        `If the fix involves visual UI, layout, or browser-only behavior that cannot be verified via API:`,
+        `- Describe what the operator should look at (page, element, interaction)`,
+        `- Describe the expected vs previous behavior`,
+      ].join('\n')
+
+      milestone.subtasks.push({
+        id: taskId,
+        label: fix.label,
+        status: 'todo',
+        done: false,
+        assignee: null,
+        blocked_by: null,
+        blocked_reason: null,
+        completed_at: null,
+        completed_by: null,
+        priority: priorityMap[fix.severity] ?? 'P2',
+        notes,
+        prompt: null,
+        context_files: [],
+        reference_docs: [],
+        acceptance_criteria: [],
+        constraints: [],
+        agent_target: null,
+        execution_mode: 'agent',
+        depends_on: [],
+        last_run_id: null,
+        pipeline: null,
+        builder_prompt: null,
+      } as never)
+
+      fix.task_id = taskId
+      session.updated_at = new Date().toISOString()
+    })
+  }
+
+  return (
+    <div className="rounded-lg border border-border bg-surface/30 p-5">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-3">
+          <h2 className="text-sm font-bold tracking-wider text-white">FIXES</h2>
+          {allFixes.length > 0 && (
+            <span className="text-[10px] font-mono text-muted">
+              {pending.length} pending{promoted.length > 0 ? ` / ${promoted.length} in progress` : ''}{completed.length > 0 ? ` / ${completed.length} done` : ''}
+            </span>
+          )}
+        </div>
+        {pending.length > 0 && (
+          <span className="text-[10px] font-semibold tracking-wider px-2.5 py-1 rounded-md bg-orange-500/10 text-orange-400">
+            {pending.length} AWAITING TASK BOARD
+          </span>
+        )}
+      </div>
+
+      {allFixes.length === 0 ? (
+        <p className="text-[11px] text-muted">No fixes found yet. Fixes appear here when review tests fail.</p>
+      ) : (
+        <div className="space-y-2">
+          {allFixes.map((fix, idx) => {
+            const sev = SEVERITY_STYLES[fix.severity] ?? SEVERITY_STYLES.major
+            return (
+              <div
+                key={`${fix.session_id}-${fix.fixIndex}-${idx}`}
+                className={`group/fix flex items-start gap-3 rounded-lg border p-3 ${
+                  fix.task_done
+                    ? 'border-border/30 bg-dark/20 opacity-50'
+                    : fix.task_id
+                      ? 'border-border/50 bg-dark/30 opacity-70'
+                      : 'border-border bg-dark'
+                }`}
+              >
+                <div className="flex flex-col items-center gap-1 flex-shrink-0">
+                  <span
+                    className="text-[8px] font-bold px-1.5 py-0.5 rounded tracking-wider"
+                    style={{ backgroundColor: sev.bg, color: sev.text }}
+                  >
+                    {fix.task_done ? 'DONE' : sev.label}
+                  </span>
+                  {fix.task_id ? (
+                    <span className="text-[8px] font-mono text-accent">{fix.task_id}</span>
+                  ) : (
+                    <button
+                      onClick={() => promoteFix(fix.session_id, fix.fixIndex)}
+                      className="text-[8px] font-semibold px-1.5 py-0.5 rounded bg-accent/10 text-accent-light hover:bg-accent/20 hover:text-accent transition-colors"
+                      title="Push to task board"
+                    >
+                      Push
+                    </button>
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className={`text-[11px] leading-snug ${fix.task_done ? 'text-muted line-through' : 'text-white/90'}`}>{fix.label}</div>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="text-[9px] text-muted truncate">{fix.session_title}</span>
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Main View ──────────────────────────────────────────────────────────
 
 export function QAView() {
