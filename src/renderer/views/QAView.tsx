@@ -328,6 +328,221 @@ function NotBuiltSummary({ groups }: { groups: Group[] }) {
   )
 }
 
+// ── Open Sessions ──────────────────────────────────────────────────────
+
+interface SessionCheckItem {
+  label: string
+  done: boolean
+  checked_at: string | null
+}
+
+interface Session {
+  id: string
+  lane: string
+  title: string
+  status: string
+  checklist: SessionCheckItem[]
+  fixes: { label: string; severity: string; task_id: string | null }[]
+  created_at: string
+  updated_at: string
+}
+
+function SessionCard({ session, onToggleCheck, onDelete }: {
+  session: Session
+  onToggleCheck: (sessionId: string, idx: number) => void
+  onDelete: (sessionId: string) => void
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const [showConfirm, setShowConfirm] = useState(false)
+  const doneCount = session.checklist.filter(c => c.done).length
+  const totalCount = session.checklist.length
+  const pendingFixes = (session.fixes ?? []).filter(f => !f.task_id).length
+
+  return (
+    <div className="rounded-lg border border-border overflow-hidden">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full px-4 py-3 flex items-center justify-between bg-surface hover:bg-white/[0.02] transition-colors"
+      >
+        <div className="flex items-center gap-3">
+          <span className="text-[10px] text-muted">{expanded ? '▾' : '▸'}</span>
+          <span className="text-[12px] font-medium text-white">{session.title}</span>
+        </div>
+        <div className="flex items-center gap-3">
+          {totalCount > 0 && (
+            <span className="text-[10px] font-mono text-muted">{doneCount}/{totalCount} checked</span>
+          )}
+          {pendingFixes > 0 && (
+            <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-orange-500/10 text-orange-400">
+              {pendingFixes} fixes
+            </span>
+          )}
+        </div>
+      </button>
+
+      {expanded && (
+        <div className="border-t border-border/50 px-4 py-3">
+          {totalCount > 0 && (
+            <>
+              <div className="flex items-center gap-1.5 mb-3">
+                <div className="flex-1 h-1 rounded-full bg-border overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-accent transition-all duration-300"
+                    style={{ width: `${totalCount > 0 ? (doneCount / totalCount) * 100 : 0}%` }}
+                  />
+                </div>
+                <span className="text-[9px] text-muted font-mono">{doneCount}/{totalCount}</span>
+              </div>
+              <div className="space-y-1.5">
+                {session.checklist.map((item, idx) => (
+                  <button
+                    key={idx}
+                    onClick={(e) => { e.stopPropagation(); onToggleCheck(session.id, idx) }}
+                    className="flex items-start gap-2 w-full text-left group/item"
+                  >
+                    <div className={`w-3.5 h-3.5 rounded border flex-shrink-0 flex items-center justify-center transition-colors mt-px ${
+                      item.done
+                        ? 'bg-accent/20 border-accent text-accent'
+                        : 'border-border group-hover/item:border-muted'
+                    }`}>
+                      {item.done && (
+                        <svg className="w-2.5 h-2.5" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M2 6l3 3 5-6" />
+                        </svg>
+                      )}
+                    </div>
+                    <span className={`text-[11px] leading-tight ${item.done ? 'text-muted line-through' : 'text-white/80'}`}>
+                      {item.label}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+          {totalCount === 0 && (
+            <p className="text-[10px] text-muted">No checklist items. Fixes from this session appear in the Fixes inbox below.</p>
+          )}
+
+          <div className="mt-3 pt-2 border-t border-border/50">
+            {!showConfirm ? (
+              <button
+                onClick={(e) => { e.stopPropagation(); setShowConfirm(true) }}
+                className="text-[9px] text-muted hover:text-red-400 transition-colors"
+              >
+                Delete session
+              </button>
+            ) : (
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] text-muted">Delete this session?</span>
+                <button onClick={(e) => { e.stopPropagation(); onDelete(session.id) }} className="text-[10px] font-semibold text-red-400 hover:text-red-300 px-1.5 py-0.5 rounded hover:bg-red-400/10 transition-colors">Yes</button>
+                <button onClick={(e) => { e.stopPropagation(); setShowConfirm(false) }} className="text-[10px] font-semibold text-muted hover:text-white px-1.5 py-0.5 rounded hover:bg-white/5 transition-colors">No</button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function NewSessionInput({ onSubmit }: { onSubmit: (name: string) => void }) {
+  const [open, setOpen] = useState(false)
+  const [value, setValue] = useState('')
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        className="w-full py-2 rounded-lg border border-dashed border-border text-[10px] text-muted font-semibold tracking-wider hover:border-accent/40 hover:text-accent-light transition-colors"
+      >
+        + New Session
+      </button>
+    )
+  }
+
+  const handleSubmit = () => {
+    if (value.trim()) {
+      onSubmit(value)
+      setValue('')
+      setOpen(false)
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <input
+        autoFocus
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') handleSubmit()
+          if (e.key === 'Escape') { setValue(''); setOpen(false) }
+        }}
+        placeholder="Name this session..."
+        className="flex-1 text-[11px] px-3 py-1.5 rounded-md bg-dark border border-border text-white placeholder:text-muted/50 outline-none focus:border-accent/40 transition-colors"
+      />
+      <button onClick={handleSubmit} className="text-[10px] font-semibold text-accent-light hover:text-accent px-2 py-1.5 rounded-md hover:bg-accent/10 transition-colors">Add</button>
+      <button onClick={() => { setValue(''); setOpen(false) }} className="text-[10px] text-muted hover:text-white px-1.5 py-1.5 transition-colors">✕</button>
+    </div>
+  )
+}
+
+function OpenSessions({ sessions, updateTracker }: {
+  sessions: Session[]
+  updateTracker: (updater: (draft: TrackerState) => void) => void
+}) {
+  const toggleCheck = (sessionId: string, idx: number) => {
+    updateTracker((draft: TrackerState) => {
+      const session = (draft.review_sessions ?? []).find((s: any) => s.id === sessionId)
+      if (!session || idx < 0 || idx >= session.checklist.length) return
+      session.checklist[idx].done = !session.checklist[idx].done
+      session.checklist[idx].checked_at = session.checklist[idx].done ? new Date().toISOString() : null
+      session.updated_at = new Date().toISOString()
+    })
+  }
+
+  const deleteSession = (id: string) => {
+    updateTracker((draft: TrackerState) => {
+      draft.review_sessions = (draft.review_sessions ?? []).filter((s: any) => s.id !== id)
+    })
+  }
+
+  const addSession = (title: string) => {
+    if (!title.trim()) return
+    const id = `review-session-${Date.now()}`
+    updateTracker((draft: TrackerState) => {
+      if (!draft.review_sessions) draft.review_sessions = []
+      draft.review_sessions.push({
+        id, lane: 'backend' as any, title: title.trim(), status: 'not_started' as any, area: title.trim(),
+        checklist: [], fixes: [], priority: null as any,
+        source: 'manual', created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+      } as any)
+    })
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <h2 className="text-[10px] font-bold tracking-wider text-white/50 uppercase">Open Sessions</h2>
+          <span className="text-[10px] font-mono text-muted">{sessions.length}</span>
+        </div>
+      </div>
+      <div className="space-y-2">
+        {sessions.map(session => (
+          <SessionCard
+            key={session.id}
+            session={session}
+            onToggleCheck={toggleCheck}
+            onDelete={deleteSession}
+          />
+        ))}
+        <NewSessionInput onSubmit={addSession} />
+      </div>
+    </div>
+  )
+}
+
 // ── Fixes Section ─────────────────────────────────────────────────────
 
 const SEVERITY_STYLES: Record<string, { bg: string; text: string; label: string; sort: number }> = {
@@ -531,6 +746,7 @@ function FixesSection({ sessions, milestones, updateTracker }: {
 export function QAView() {
   const { tracker, updateTracker } = useStore()
   const groups: Group[] = (tracker?.qa?.groups ?? []) as Group[]
+  const sessions: Session[] = (tracker?.review_sessions ?? []) as Session[]
 
   const builtGroups = groups.filter(g => g.use_cases.some(uc => uc.built))
 
@@ -548,17 +764,17 @@ export function QAView() {
             let qaSession = draft.review_sessions.find((s: any) => s.id === 'qa_failures')
             if (!qaSession) {
               qaSession = {
-                id: 'qa_failures', lane: 'backend' as const, title: 'QA Failures',
-                status: 'in_progress' as const, area: 'QA Verification',
-                checklist: [], fixes: [], priority: 'P1' as const,
+                id: 'qa_failures', lane: 'backend' as any, title: 'QA Failures',
+                status: 'in_progress' as any, area: 'QA Verification',
+                checklist: [], fixes: [], priority: 'P1' as any,
                 source: 'qa_tab', created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
-              }
+              } as any
               draft.review_sessions.push(qaSession)
             }
             if (!qaSession.fixes) qaSession.fixes = []
             qaSession.fixes.push({
               label: `QA: ${uc.name} — operator fail${notes ? ': ' + notes : ''}`,
-              severity: 'major' as const,
+              severity: 'major' as any,
               task_id: null,
               created_at: new Date().toISOString(),
             })
@@ -594,11 +810,24 @@ export function QAView() {
       <div className="flex-shrink-0 px-5 pt-4 pb-3 border-b border-border bg-dark">
         <ReadinessBar groups={groups} />
       </div>
-      <div className="flex-1 overflow-y-auto px-5 py-4 space-y-2">
-        {builtGroups.map(group => (
-          <GroupCard key={group.id} group={group} onMark={handleMark} onReset={handleReset} />
-        ))}
-        <NotBuiltSummary groups={groups} />
+      <div className="flex-1 overflow-y-auto px-5 py-4 space-y-6">
+        {/* Section 1: Use Case Verification */}
+        <div className="space-y-2">
+          {builtGroups.map(group => (
+            <GroupCard key={group.id} group={group} onMark={handleMark} onReset={handleReset} />
+          ))}
+          <NotBuiltSummary groups={groups} />
+        </div>
+
+        {/* Section 2: Open Sessions */}
+        <OpenSessions sessions={sessions} updateTracker={updateTracker} />
+
+        {/* Section 3: Fixes Inbox */}
+        <FixesSection
+          sessions={sessions}
+          milestones={tracker?.milestones ?? []}
+          updateTracker={updateTracker}
+        />
       </div>
     </div>
   )
