@@ -151,6 +151,13 @@ export interface ReviewCheckItem {
   checked_at: string | null
 }
 
+export interface ReviewFix {
+  label: string
+  severity: 'critical' | 'major' | 'minor'
+  task_id: string | null
+  created_at: string
+}
+
 export interface ReviewSession {
   id: string
   lane: 'ui' | 'ux' | 'backend'
@@ -158,10 +165,37 @@ export interface ReviewSession {
   status: 'not_started' | 'in_progress' | 'done'
   area: string
   checklist: ReviewCheckItem[]
+  fixes: ReviewFix[]
   priority: 'P1' | 'P2' | 'P3' | null
   source: string | null
   created_at: string
   updated_at: string
+}
+
+export interface QAUseCase {
+  id: string
+  name: string
+  task: string
+  scope: string
+  built: boolean
+  test_prompt: string
+  agent_status: 'untested' | 'pass' | 'fail'
+  agent_tested_at: string | null
+  agent_notes: string | null
+  operator_status: 'untested' | 'pass' | 'fail'
+  operator_tested_at: string | null
+  operator_notes: string | null
+  review_fix_id: string | null
+}
+
+export interface QAGroup {
+  id: string
+  name: string
+  use_cases: QAUseCase[]
+}
+
+export interface QAData {
+  groups: QAGroup[]
 }
 
 export interface TrackerState {
@@ -180,6 +214,7 @@ export interface TrackerState {
   schedule: { phases: SchedulePhase[] }
   waitlist_tracker?: WaitlistTracker
   review_sessions: ReviewSession[]
+  qa: QAData
 }
 
 // ─── Reference Data ──────────────────────────────────────────────────────────
@@ -596,6 +631,7 @@ export function generateTrackerState(
       ],
     },
     review_sessions: [],
+    qa: { groups: [] },
   }
 }
 
@@ -670,6 +706,7 @@ export function preserveExistingState(newState: TrackerState, existingPath: stri
   if (existing.agent_log?.length) newState.agent_log = existing.agent_log
   if (existing.agents?.length) newState.agents = existing.agents
   if ((existing as any).review_sessions?.length) newState.review_sessions = (existing as any).review_sessions
+  if ((existing as any).qa) newState.qa = (existing as any).qa
 
   return newState
 }

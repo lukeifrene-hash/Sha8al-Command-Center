@@ -40,8 +40,8 @@ export interface Milestone {
   domain: string
   week: number
   phase: string
-  planned_start: string
-  planned_end: string
+  planned_start: string | null
+  planned_end: string | null
   actual_start: string | null
   actual_end: string | null
   drift_days: number
@@ -103,6 +103,13 @@ export interface ReviewCheckItem {
   checked_at: string | null
 }
 
+export interface ReviewFix {
+  label: string
+  severity: 'critical' | 'major' | 'minor'
+  task_id: string | null
+  created_at: string
+}
+
 export interface ReviewSession {
   id: string
   lane: 'ui' | 'ux' | 'backend'
@@ -110,10 +117,37 @@ export interface ReviewSession {
   status: 'not_started' | 'in_progress' | 'done'
   area: string
   checklist: ReviewCheckItem[]
+  fixes: ReviewFix[]
   priority: 'P1' | 'P2' | 'P3' | null
   source: string | null
   created_at: string
   updated_at: string
+}
+
+export interface QAUseCase {
+  id: string
+  name: string
+  task: string
+  scope: string
+  built: boolean
+  test_prompt: string
+  agent_status: 'untested' | 'pass' | 'fail'
+  agent_tested_at: string | null
+  agent_notes: string | null
+  operator_status: 'untested' | 'pass' | 'fail'
+  operator_tested_at: string | null
+  operator_notes: string | null
+  review_fix_id: string | null
+}
+
+export interface QAGroup {
+  id: string
+  name: string
+  use_cases: QAUseCase[]
+}
+
+export interface QAData {
+  groups: QAGroup[]
 }
 
 export interface TrackerState {
@@ -141,6 +175,7 @@ export interface TrackerState {
   agent_log: AgentLogEntry[]
   schedule: { phases: { id: string; title: string; start_week: number; end_week: number }[] }
   review_sessions: ReviewSession[]
+  qa: QAData
 }
 
 // ─── Path Resolution ────────────────────────────────────────────────────────
@@ -187,6 +222,8 @@ export function readTracker(): TrackerState {
   const state = JSON.parse(json) as TrackerState
   // Auto-initialize review_sessions if missing (backwards compat)
   if (!state.review_sessions) state.review_sessions = []
+  // Auto-initialize qa if missing (backwards compat)
+  if (!state.qa) state.qa = { groups: [] }
   return state
 }
 
