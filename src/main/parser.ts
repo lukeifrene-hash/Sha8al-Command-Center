@@ -8,6 +8,7 @@
  */
 
 import { readFileSync, writeFileSync, existsSync } from 'fs'
+import { QA_SEED } from '../../mcp-server/src/qa-seed.js'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -631,7 +632,7 @@ export function generateTrackerState(
       ],
     },
     review_sessions: [],
-    qa: { groups: [] },
+    qa: QA_SEED,
   }
 }
 
