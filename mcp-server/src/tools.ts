@@ -12,6 +12,8 @@ import {
   type Subtask,
   type Milestone,
   type ReviewSession,
+  type ReviewFix,
+  type QAUseCase,
 } from './tracker.js'
 import {
   buildTaskContext,
@@ -642,6 +644,69 @@ export const TOOL_DEFINITIONS = [
     },
   },
   {
+    name: 'get_review_session',
+    description:
+      'Get full details of a review session including all checklist items with their labels, done status, and indices. ' +
+      'Use this to read back what items exist in a session before resuming work or using check_review_item.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        session_id: {
+          type: 'string',
+          description: 'The review session ID (e.g., "review-ui-1712345678")',
+        },
+      },
+      required: ['session_id'],
+    },
+  },
+  {
+    name: 'add_review_fix',
+    description:
+      'Log a fix discovered during a review session. Fixes are issues found during verification that need to be ' +
+      'addressed by an agent on the task board. They render in a separate "Fixes" section below the verification checklist. ' +
+      'Use this instead of add_review_item when the item is a problem to fix, not a test to run.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        session_id: {
+          type: 'string',
+          description: 'The review session ID',
+        },
+        label: {
+          type: 'string',
+          description: 'Description of the fix needed, e.g. "Quick-action chips are not contextual to actual findings"',
+        },
+        severity: {
+          type: 'string',
+          enum: ['critical', 'major', 'minor'],
+          description: 'How severe is this issue: critical (blocks functionality), major (wrong behavior), minor (polish)',
+        },
+      },
+      required: ['session_id', 'label'],
+    },
+  },
+  {
+    name: 'promote_fixes',
+    description:
+      'Promote all unlinked fixes from a review session to the task board as subtasks in a milestone. ' +
+      'Each fix becomes a task with status "todo". The fix gets a task_id link back to the created task. ' +
+      'Already-promoted fixes (with a task_id) are skipped.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        session_id: {
+          type: 'string',
+          description: 'The review session ID with fixes to promote',
+        },
+        milestone_id: {
+          type: 'string',
+          description: 'The milestone ID to create tasks in (e.g. "review_polish")',
+        },
+      },
+      required: ['session_id', 'milestone_id'],
+    },
+  },
+  {
     name: 'delete_review_session',
     description:
       'Delete a review session from the Review tab.',
@@ -654,6 +719,128 @@ export const TOOL_DEFINITIONS = [
         },
       },
       required: ['session_id'],
+    },
+  },
+  {
+    name: 'create_milestone',
+    description:
+      'Create a new empty milestone in the SwimLane. Use this when the operator wants to add a new phase or ' +
+      'grouping of tasks to the project timeline. The milestone starts with zero tasks — use add_milestone_task to populate it.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        id: {
+          type: 'string',
+          description: 'Unique milestone ID in snake_case (e.g. "pre_launch_extras")',
+        },
+        title: {
+          type: 'string',
+          description: 'Human-readable title (e.g. "Pre-Launch Extras")',
+        },
+        domain: {
+          type: 'string',
+          description: 'Domain category (e.g. "product_ops", "foundation", "general")',
+        },
+        phase: {
+          type: 'string',
+          description: 'Phase identifier, can match the milestone ID (e.g. "pre_launch_extras")',
+        },
+        planned_start: {
+          type: 'string',
+          description: 'Planned start date in YYYY-MM-DD format (optional)',
+        },
+        planned_end: {
+          type: 'string',
+          description: 'Planned end date in YYYY-MM-DD format (optional)',
+        },
+      },
+      required: ['id', 'title'],
+    },
+  },
+  {
+    name: 'add_milestone_task',
+    description:
+      'Add a new task (subtask) to an existing milestone. Creates the task in "todo" status with all standard fields. ' +
+      'Use this when the operator wants to add work items to a milestone on demand.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        milestone_id: {
+          type: 'string',
+          description: 'The milestone ID to add the task to',
+        },
+        label: {
+          type: 'string',
+          description: 'Short description of the task',
+        },
+        priority: {
+          type: 'string',
+          description: 'Priority level: "1" (highest) to "4" (lowest). Defaults to "2".',
+        },
+        acceptance_criteria: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'List of acceptance criteria for the task (optional)',
+        },
+        constraints: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'List of constraints for the task (optional)',
+        },
+        depends_on: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'List of task IDs this task depends on (optional)',
+        },
+        execution_mode: {
+          type: 'string',
+          enum: ['human', 'agent', 'pair'],
+          description: 'How this task should be executed. Defaults to "agent".',
+        },
+      },
+      required: ['milestone_id', 'label'],
+    },
+  },
+  {
+    name: 'get_qa_status',
+    description:
+      'Get QA verification status for all 28 EXECUTE use cases. Returns groups with per-use-case agent/operator ' +
+      'status, plus readiness summary (verified count, agent progress, operator progress). ' +
+      'A use case is "verified" only when BOTH agent and operator have passed it.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {},
+      required: [],
+    },
+  },
+  {
+    name: 'mark_qa_result',
+    description:
+      'Mark a QA use case as pass or fail. Requires specifying the tester ("agent" or "operator"). ' +
+      'On failure, a fix is automatically created in the Review tab\'s Fixes inbox. ' +
+      'Both agent AND operator must pass for a use case to be fully verified.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        use_case_id: { type: 'string', description: 'The use case ID (e.g., "enrich_missing_attributes")' },
+        tester: { type: 'string', enum: ['agent', 'operator'], description: 'Who is recording this result' },
+        status: { type: 'string', enum: ['pass', 'fail'], description: 'Test result' },
+        notes: { type: 'string', description: 'Optional notes — failure details, observations' },
+      },
+      required: ['use_case_id', 'tester', 'status'],
+    },
+  },
+  {
+    name: 'reset_qa_result',
+    description:
+      'Reset a QA use case back to untested. Clears BOTH agent and operator status, timestamps, and notes. ' +
+      'Use after a fix has been applied and the use case needs re-verification.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        use_case_id: { type: 'string', description: 'The use case ID to reset' },
+      },
+      required: ['use_case_id'],
     },
   },
 ]
@@ -763,8 +950,40 @@ export async function handleTool(
         return handleCheckReviewItem(args.session_id as string, args.item_index as number, args.done as boolean | undefined)
       case 'list_review_sessions':
         return handleListReviewSessions(args.lane as string | undefined)
+      case 'get_review_session':
+        return handleGetReviewSession(args.session_id as string)
+      case 'add_review_fix':
+        return handleAddReviewFix(args.session_id as string, args.label as string, args.severity as string | undefined)
+      case 'promote_fixes':
+        return handlePromoteFixes(args.session_id as string, args.milestone_id as string)
       case 'delete_review_session':
         return handleDeleteReviewSession(args.session_id as string)
+      case 'get_qa_status':
+        return handleGetQAStatus()
+      case 'mark_qa_result':
+        return handleMarkQAResult(
+          args.use_case_id as string,
+          args.tester as string,
+          args.status as string,
+          args.notes as string | undefined
+        )
+      case 'reset_qa_result':
+        return handleResetQAResult(args.use_case_id as string)
+      case 'create_milestone':
+        return handleCreateMilestone(
+          args.id as string, args.title as string,
+          args.domain as string | undefined, args.phase as string | undefined,
+          args.planned_start as string | undefined, args.planned_end as string | undefined
+        )
+      case 'add_milestone_task':
+        return handleAddMilestoneTask(
+          args.milestone_id as string, args.label as string,
+          args.priority as string | undefined,
+          args.acceptance_criteria as string[] | undefined,
+          args.constraints as string[] | undefined,
+          args.depends_on as string[] | undefined,
+          args.execution_mode as string | undefined
+        )
       default:
         return { content: [{ type: 'text', text: `Unknown tool: ${name}` }], isError: true }
     }
@@ -875,9 +1094,11 @@ function handleStartTask(taskId: string, agentId?: string) {
   if (!milestone.actual_start) {
     milestone.actual_start = new Date().toISOString().split('T')[0]
     // Calculate drift from planned start
-    const planned = new Date(milestone.planned_start)
-    const actual = new Date(milestone.actual_start)
-    milestone.drift_days = Math.round((actual.getTime() - planned.getTime()) / (1000 * 60 * 60 * 24))
+    if (milestone.planned_start) {
+      const planned = new Date(milestone.planned_start)
+      const actual = new Date(milestone.actual_start)
+      milestone.drift_days = Math.round((actual.getTime() - planned.getTime()) / (1000 * 60 * 60 * 24))
+    }
     extras.push(`Milestone actual_start set to ${milestone.actual_start} (drift: ${milestone.drift_days} days)`)
   }
 
@@ -1345,12 +1566,14 @@ function handleSetMilestoneDates(
     changes.push(`actual_start → ${actualStart}`)
 
     // Auto-calculate drift from planned_start
-    const planned = new Date(milestone.planned_start)
-    const actual = new Date(actualStart)
-    const diffMs = actual.getTime() - planned.getTime()
-    const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24))
-    milestone.drift_days = diffDays
-    changes.push(`drift_days → ${diffDays} (auto-calculated)`)
+    if (milestone.planned_start) {
+      const planned = new Date(milestone.planned_start)
+      const actual = new Date(actualStart)
+      const diffMs = actual.getTime() - planned.getTime()
+      const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24))
+      milestone.drift_days = diffDays
+      changes.push(`drift_days → ${diffDays} (auto-calculated)`)
+    }
   }
 
   if (actualEnd !== undefined) {
@@ -1739,6 +1962,7 @@ function handleCreateReviewSession(
     status: 'in_progress',
     area,
     checklist: [],
+    fixes: [],
     priority: (priority as ReviewSession['priority']) ?? null,
     source: source ?? null,
     created_at: new Date().toISOString(),
@@ -1782,9 +2006,271 @@ function handleListReviewSessions(lane?: string) {
   const lines = sessions.map(s => {
     const done = s.checklist.filter(c => c.done).length
     const total = s.checklist.length
-    return `- [${s.lane.toUpperCase()}] ${s.id}: "${s.title}" (${s.status}) — ${done}/${total} items`
+    const fixes = (s.fixes ?? []).length
+    const fixSuffix = fixes > 0 ? ` | ${fixes} fixes` : ''
+    return `- [${s.lane.toUpperCase()}] ${s.id}: "${s.title}" (${s.status}) — ${done}/${total} items${fixSuffix}`
   })
   return { content: [{ type: 'text' as const, text: lines.join('\n') }] }
+}
+
+function handleGetReviewSession(sessionId: string) {
+  const state = readTracker()
+  const session = state.review_sessions.find(s => s.id === sessionId)
+  if (!session) {
+    return { content: [{ type: 'text' as const, text: `Review session not found: ${sessionId}` }], isError: true }
+  }
+
+  const lines: string[] = []
+  lines.push(`# ${session.title}`)
+  lines.push(`- **ID:** ${session.id}`)
+  lines.push(`- **Lane:** ${session.lane}`)
+  lines.push(`- **Status:** ${session.status}`)
+  lines.push(`- **Area:** ${session.area}`)
+  if (session.priority) lines.push(`- **Priority:** ${session.priority}`)
+  if (session.source) lines.push(`- **Source:** ${session.source}`)
+  lines.push(`- **Created:** ${session.created_at}`)
+  lines.push(`- **Updated:** ${session.updated_at}`)
+
+  const done = session.checklist.filter(c => c.done).length
+  const total = session.checklist.length
+  lines.push(`\n## Verification Checklist (${done}/${total})`)
+
+  if (total === 0) {
+    lines.push('No items yet.')
+  } else {
+    for (let i = 0; i < session.checklist.length; i++) {
+      const item = session.checklist[i]
+      const check = item.done ? 'x' : ' '
+      lines.push(`${i}. [${check}] ${item.label}${item.checked_at ? ` (checked: ${item.checked_at})` : ''}`)
+    }
+  }
+
+  const fixes = session.fixes ?? []
+  if (fixes.length > 0) {
+    const linkedCount = fixes.filter(f => f.task_id).length
+    lines.push(`\n## Fixes Found (${fixes.length} total, ${linkedCount} promoted)`)
+    for (let i = 0; i < fixes.length; i++) {
+      const fix = fixes[i]
+      const linked = fix.task_id ? ` → task ${fix.task_id}` : ''
+      lines.push(`${i}. [${fix.severity.toUpperCase()}] ${fix.label}${linked}`)
+    }
+  }
+
+  return { content: [{ type: 'text' as const, text: lines.join('\n') }] }
+}
+
+function handleAddReviewFix(sessionId: string, label: string, severity?: string) {
+  const state = readTracker()
+  const session = state.review_sessions.find(s => s.id === sessionId)
+  if (!session) return { content: [{ type: 'text' as const, text: `Session not found: ${sessionId}` }], isError: true }
+  if (!session.fixes) session.fixes = []
+  const fix: ReviewFix = {
+    label,
+    severity: (severity as ReviewFix['severity']) ?? 'major',
+    task_id: null,
+    created_at: new Date().toISOString(),
+  }
+  session.fixes.push(fix)
+  session.updated_at = new Date().toISOString()
+  writeTracker(state)
+  const fixIdx = session.fixes.length - 1
+  return { content: [{ type: 'text' as const, text: `Added fix #${fixIdx} [${fix.severity}] "${label}" to session ${sessionId}` }] }
+}
+
+function handlePromoteFixes(sessionId: string, milestoneId: string) {
+  const state = readTracker()
+  const session = state.review_sessions.find(s => s.id === sessionId)
+  if (!session) return { content: [{ type: 'text' as const, text: `Session not found: ${sessionId}` }], isError: true }
+  if (!session.fixes) session.fixes = []
+
+  const milestone = state.milestones.find(m => m.id === milestoneId)
+  if (!milestone) return { content: [{ type: 'text' as const, text: `Milestone not found: ${milestoneId}` }], isError: true }
+
+  const unlinked = session.fixes.filter(f => !f.task_id)
+  if (unlinked.length === 0) {
+    return { content: [{ type: 'text' as const, text: `No unlinked fixes to promote in session ${sessionId}` }] }
+  }
+
+  const created: string[] = []
+  const idPattern = new RegExp(`^${milestoneId}_(\\d+)$`)
+  for (const fix of unlinked) {
+    const existingNums = milestone.subtasks
+      .map(s => s.id.match(idPattern))
+      .filter(Boolean)
+      .map(m => parseInt(m![1], 10))
+    const nextNum = existingNums.length > 0 ? Math.max(...existingNums) + 1 : 1
+    const taskNum = String(nextNum).padStart(3, '0')
+    const taskId = `${milestoneId}_${taskNum}`
+    const priorityMap: Record<string, string> = { critical: 'P1', major: 'P2', minor: 'P3' }
+
+    milestone.subtasks.push({
+      id: taskId,
+      label: fix.label,
+      status: 'todo',
+      done: false,
+      assignee: null,
+      blocked_by: null,
+      blocked_reason: null,
+      completed_at: null,
+      completed_by: null,
+      priority: priorityMap[fix.severity] ?? 'P2',
+      notes: `Promoted from review session "${session.title}" (${sessionId})`,
+      prompt: null,
+      context_files: [],
+      reference_docs: [],
+      acceptance_criteria: [],
+      constraints: [],
+      agent_target: null,
+      execution_mode: 'agent',
+      depends_on: [],
+      last_run_id: null,
+      pipeline: null,
+      builder_prompt: null,
+    })
+
+    fix.task_id = taskId
+    created.push(`${taskId}: "${fix.label}" [${fix.severity}]`)
+  }
+
+  session.updated_at = new Date().toISOString()
+  writeTracker(state)
+
+  const lines = [`Promoted ${created.length} fixes from "${session.title}" to milestone "${milestoneId}":`, ...created.map(c => `- ${c}`)]
+  return { content: [{ type: 'text' as const, text: lines.join('\n') }] }
+}
+
+// ─── QA Handlers ──────────────────────────────────────────────────────────────
+
+function findQAUseCase(state: TrackerState, useCaseId: string): { group: typeof state.qa.groups[number]; uc: QAUseCase } | null {
+  for (const group of state.qa.groups) {
+    const uc = group.use_cases.find(u => u.id === useCaseId)
+    if (uc) return { group, uc }
+  }
+  return null
+}
+
+function handleGetQAStatus() {
+  const state = readTracker()
+  if (!state.qa?.groups) {
+    return { content: [{ type: 'text' as const, text: 'No QA data found in tracker.' }], isError: true }
+  }
+
+  let totalUc = 0, verified = 0, agentPass = 0, operatorPass = 0, fails = 0
+  const lines: string[] = ['# QA Verification Status\n']
+
+  for (const group of state.qa.groups) {
+    const groupVerified = group.use_cases.filter(u => u.agent_status === 'pass' && u.operator_status === 'pass').length
+    const groupTotal = group.use_cases.length
+    lines.push(`## ${group.name} (${groupVerified}/${groupTotal} verified)`)
+
+    for (const uc of group.use_cases) {
+      totalUc++
+      if (uc.agent_status === 'pass' && uc.operator_status === 'pass') verified++
+      if (uc.agent_status === 'pass') agentPass++
+      if (uc.operator_status === 'pass') operatorPass++
+      if (uc.agent_status === 'fail' || uc.operator_status === 'fail') fails++
+
+      const agentIcon = uc.agent_status === 'pass' ? '✓' : uc.agent_status === 'fail' ? '✗' : '○'
+      const opIcon = uc.operator_status === 'pass' ? '✓' : uc.operator_status === 'fail' ? '✗' : '○'
+      const built = uc.built ? '' : ' [NOT BUILT]'
+      lines.push(`  ${agentIcon}/${opIcon} ${uc.name}${built}`)
+      if (uc.agent_notes) lines.push(`       Agent notes: ${uc.agent_notes}`)
+      if (uc.operator_notes) lines.push(`       Operator notes: ${uc.operator_notes}`)
+    }
+    lines.push('')
+  }
+
+  lines.unshift(`**Readiness: ${verified}/${totalUc} verified** | Agent: ${agentPass}/${totalUc} | Operator: ${operatorPass}/${totalUc} | Failures: ${fails}\n`)
+
+  return { content: [{ type: 'text' as const, text: lines.join('\n') }] }
+}
+
+function handleMarkQAResult(useCaseId: string, tester: string, status: string, notes?: string) {
+  const state = readTracker()
+  if (!state.qa?.groups) {
+    return { content: [{ type: 'text' as const, text: 'No QA data found in tracker.' }], isError: true }
+  }
+
+  const found = findQAUseCase(state, useCaseId)
+  if (!found) {
+    return { content: [{ type: 'text' as const, text: `Use case not found: ${useCaseId}` }], isError: true }
+  }
+
+  const { uc } = found
+  const now = new Date().toISOString()
+
+  if (tester === 'agent') {
+    uc.agent_status = status as QAUseCase['agent_status']
+    uc.agent_tested_at = now
+    uc.agent_notes = notes ?? null
+  } else {
+    uc.operator_status = status as QAUseCase['operator_status']
+    uc.operator_tested_at = now
+    uc.operator_notes = notes ?? null
+  }
+
+  // Auto-push failure to Review Fixes inbox
+  if (status === 'fail') {
+    if (!state.review_sessions) state.review_sessions = []
+    let qaSession = state.review_sessions.find(s => s.id === 'qa_failures')
+    if (!qaSession) {
+      qaSession = {
+        id: 'qa_failures',
+        lane: 'backend',
+        title: 'QA Failures',
+        status: 'in_progress',
+        area: 'QA Verification',
+        checklist: [],
+        fixes: [],
+        priority: 'P1',
+        source: 'qa_tab',
+        created_at: now,
+        updated_at: now,
+      }
+      state.review_sessions.push(qaSession)
+    }
+    if (!qaSession.fixes) qaSession.fixes = []
+    const fixLabel = `QA: ${uc.name} — ${tester} fail`
+    const fix: ReviewFix = {
+      label: fixLabel,
+      severity: 'major',
+      task_id: null,
+      created_at: now,
+    }
+    qaSession.fixes.push(fix)
+    qaSession.updated_at = now
+    uc.review_fix_id = `qa_failures:fix-${qaSession.fixes.length - 1}`
+  }
+
+  writeTracker(state)
+
+  const icon = status === 'pass' ? '✓' : '✗'
+  const fixNote = status === 'fail' ? ' → Fix pushed to Review' : ''
+  return { content: [{ type: 'text' as const, text: `${icon} ${tester} marked "${uc.name}" as ${status.toUpperCase()}${fixNote}` }] }
+}
+
+function handleResetQAResult(useCaseId: string) {
+  const state = readTracker()
+  if (!state.qa?.groups) {
+    return { content: [{ type: 'text' as const, text: 'No QA data found in tracker.' }], isError: true }
+  }
+
+  const found = findQAUseCase(state, useCaseId)
+  if (!found) {
+    return { content: [{ type: 'text' as const, text: `Use case not found: ${useCaseId}` }], isError: true }
+  }
+
+  const { uc } = found
+  uc.agent_status = 'untested'
+  uc.agent_tested_at = null
+  uc.agent_notes = null
+  uc.operator_status = 'untested'
+  uc.operator_tested_at = null
+  uc.operator_notes = null
+  uc.review_fix_id = null
+
+  writeTracker(state)
+  return { content: [{ type: 'text' as const, text: `Reset "${uc.name}" — both agent and operator must re-verify` }] }
 }
 
 function handleDeleteReviewSession(sessionId: string) {
@@ -1794,4 +2280,99 @@ function handleDeleteReviewSession(sessionId: string) {
   const removed = state.review_sessions.splice(idx, 1)[0]
   writeTracker(state)
   return { content: [{ type: 'text' as const, text: `Deleted session "${removed.title}" (${sessionId})` }] }
+}
+
+// ─── Milestone & Task Creation Handlers ──────────────────────────────────
+
+function handleCreateMilestone(
+  id: string, title: string,
+  domain?: string, phase?: string,
+  plannedStart?: string, plannedEnd?: string
+) {
+  const state = readTracker()
+
+  if (state.milestones.find(m => m.id === id)) {
+    return { content: [{ type: 'text' as const, text: `Milestone "${id}" already exists.` }], isError: true }
+  }
+
+  const milestone: Milestone = {
+    id,
+    title,
+    domain: domain ?? 'general',
+    week: 0,
+    phase: phase ?? id,
+    planned_start: plannedStart ?? null,
+    planned_end: plannedEnd ?? null,
+    actual_start: null,
+    actual_end: null,
+    drift_days: 0,
+    is_key_milestone: false,
+    key_milestone_label: null,
+    subtasks: [],
+    notes: [],
+    dependencies: [],
+  }
+
+  state.milestones.push(milestone)
+  writeTracker(state)
+
+  return {
+    content: [{
+      type: 'text' as const,
+      text: `Created milestone "${title}" (${id}) with 0 tasks. Use add_milestone_task to populate it.`,
+    }],
+  }
+}
+
+function handleAddMilestoneTask(
+  milestoneId: string, label: string,
+  priority?: string,
+  acceptanceCriteria?: string[],
+  constraints?: string[],
+  dependsOn?: string[],
+  executionMode?: string
+) {
+  const state = readTracker()
+  const milestone = state.milestones.find(m => m.id === milestoneId)
+  if (!milestone) {
+    return { content: [{ type: 'text' as const, text: `Milestone not found: ${milestoneId}` }], isError: true }
+  }
+
+  const taskNum = String(milestone.subtasks.length + 1).padStart(3, '0')
+  const taskId = `${milestoneId}_${taskNum}`
+
+  const task: Subtask = {
+    id: taskId,
+    label,
+    status: 'todo',
+    done: false,
+    assignee: null,
+    blocked_by: null,
+    blocked_reason: null,
+    completed_at: null,
+    completed_by: null,
+    priority: priority ?? '2',
+    notes: null,
+    prompt: null,
+    context_files: [],
+    reference_docs: [],
+    acceptance_criteria: acceptanceCriteria ?? [],
+    constraints: constraints ?? [],
+    agent_target: null,
+    execution_mode: (executionMode as Subtask['execution_mode']) ?? 'agent',
+    last_run_id: null,
+    depends_on: dependsOn ?? [],
+    builder_prompt: null,
+    pipeline: null,
+  }
+
+  milestone.subtasks.push(task)
+  writeTracker(state)
+
+  return {
+    content: [{
+      type: 'text' as const,
+      text: `Added task "${label}" (${taskId}) to milestone "${milestone.title}". Total tasks: ${milestone.subtasks.length}.`,
+    }],
+  }
 }
