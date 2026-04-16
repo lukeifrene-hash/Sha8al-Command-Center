@@ -1,12 +1,11 @@
 import { useMemo } from 'react'
 import { useStore } from '../store'
 
-type TabId = 'swim-lane' | 'task-board' | 'review' | 'agent-hub' | 'calendar' | 'birds-eye' | 'qa'
+type TabId = 'swim-lane' | 'task-board' | 'agent-hub' | 'calendar' | 'birds-eye' | 'qa'
 
 const TABS: { id: TabId; icon: string; label: string }[] = [
   { id: 'swim-lane', icon: '⬡', label: 'Swim Lane' },
   { id: 'task-board', icon: '⊞', label: 'Task Board' },
-  { id: 'review', icon: '✓', label: 'Review' },
   { id: 'qa', icon: '◎', label: 'QA' },
   { id: 'agent-hub', icon: '⚡', label: 'Agent Hub' },
   { id: 'calendar', icon: '▦', label: 'Calendar' },
@@ -25,11 +24,14 @@ export function TabBar() {
   }, [tracker?.agent_log])
 
   const hasQAFailure = useMemo(() => {
-    if (!tracker?.qa?.groups) return false
-    return tracker.qa.groups.some((g: any) =>
+    const qaFail = (tracker?.qa?.groups ?? []).some((g: any) =>
       g.use_cases.some((uc: any) => uc.agent_status === 'fail' || uc.operator_status === 'fail')
     )
-  }, [tracker?.qa])
+    const fixPending = (tracker?.review_sessions ?? []).some((s: any) =>
+      (s.fixes ?? []).some((f: any) => !f.task_id)
+    )
+    return qaFail || fixPending
+  }, [tracker?.qa, tracker?.review_sessions])
 
   return (
     <div
