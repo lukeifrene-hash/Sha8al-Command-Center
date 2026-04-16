@@ -4,7 +4,7 @@ import type { TrackerState } from '../main/parser'
 // Re-export the type so views can use it without reaching into main/
 export type { TrackerState }
 
-export type TabId = 'swim-lane' | 'task-board' | 'agent-hub' | 'review'
+export type TabId = 'swim-lane' | 'task-board' | 'review' | 'agent-hub' | 'calendar' | 'birds-eye' | 'qa'
 export type Theme = 'dark' | 'light'
 
 interface AppState {

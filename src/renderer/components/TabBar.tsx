@@ -1,13 +1,16 @@
 import { useMemo } from 'react'
 import { useStore } from '../store'
 
-type TabId = 'swim-lane' | 'task-board' | 'agent-hub' | 'review'
+type TabId = 'swim-lane' | 'task-board' | 'review' | 'agent-hub' | 'calendar' | 'birds-eye' | 'qa'
 
 const TABS: { id: TabId; icon: string; label: string }[] = [
   { id: 'swim-lane', icon: '⬡', label: 'Swim Lane' },
   { id: 'task-board', icon: '⊞', label: 'Task Board' },
-  { id: 'agent-hub', icon: '⚡', label: 'Agent Hub' },
   { id: 'review', icon: '✓', label: 'Review' },
+  { id: 'qa', icon: '◎', label: 'QA' },
+  { id: 'agent-hub', icon: '⚡', label: 'Agent Hub' },
+  { id: 'calendar', icon: '▦', label: 'Calendar' },
+  { id: 'birds-eye', icon: '◉', label: "Bird's Eye" },
 ]
 
 export function TabBar() {
@@ -20,6 +23,13 @@ export function TabBar() {
       (entry) => new Date(entry.timestamp).getTime() > thirtyMinAgo
     )
   }, [tracker?.agent_log])
+
+  const hasQAFailure = useMemo(() => {
+    if (!tracker?.qa?.groups) return false
+    return tracker.qa.groups.some((g: any) =>
+      g.use_cases.some((uc: any) => uc.agent_status === 'fail' || uc.operator_status === 'fail')
+    )
+  }, [tracker?.qa])
 
   return (
     <div
@@ -45,6 +55,9 @@ export function TabBar() {
             {tab.label}
             {tab.id === 'agent-hub' && hasRecentActivity && (
               <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-accent" />
+            )}
+            {tab.id === 'qa' && hasQAFailure && (
+              <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-behind" />
             )}
           </button>
         )

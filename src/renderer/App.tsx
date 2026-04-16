@@ -5,7 +5,10 @@ import { StatusBar } from './components/StatusBar'
 import { SwimLaneView } from './views/SwimLaneView'
 import { TaskBoard } from './views/TaskBoard'
 import { AgentHubPlaceholder } from './views/AgentHubPlaceholder'
+import { CalendarView } from './views/CalendarView'
+import { BirdsEyeView } from './views/BirdsEyeView'
 import { ReviewView } from './views/ReviewView'
+import { QAView } from './views/QAView'
 
 export default function App() {
   const { loading, error, activeTab, tracker, theme } = useStore()
@@ -65,8 +68,11 @@ export default function App() {
       <div className="flex-1 overflow-hidden">
         {activeTab === 'swim-lane' && <SwimLaneView />}
         {activeTab === 'task-board' && <TaskBoard />}
-        {activeTab === 'agent-hub' && <AgentHubPlaceholder />}
         {activeTab === 'review' && <ReviewView />}
+        {activeTab === 'agent-hub' && <AgentHubPlaceholder />}
+        {activeTab === 'calendar' && <CalendarView />}
+        {activeTab === 'birds-eye' && <BirdsEyeView />}
+        {activeTab === 'qa' && <QAView />}
       </div>
     </div>
   )
