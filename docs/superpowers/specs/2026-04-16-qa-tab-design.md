@@ -164,11 +164,12 @@ A use case is **fully verified** only when `agent_status === "pass" AND operator
 
 ### Auto-push on failure
 When `mark_qa_result` is called with `status: "fail"`:
-1. Create a fix entry in the Review tab's first matching review session (or create a `qa_failures` session if none exists)
+1. Create a fix entry in the **Fixes Section** at the bottom of the Review tab (the aggregated fixes inbox — NOT inside a debug lane or review session). The fix is appended to the `fixes[]` array of the most relevant existing review session, or a dedicated `qa_failures` session is auto-created if none exists.
 2. Fix label: `"QA: {use case name} — {tester} fail"`
 3. Fix notes: test prompt + failure notes + use case ID
 4. Fix severity: `"major"`
 5. Store the fix ID in the use case's `review_fix_id` field for back-linking
+6. The fix appears in the Fixes inbox with a "Push" button to promote it to a task on the debug_review milestone — same pattern as all other fixes in that section.
 
 ---
 
@@ -239,8 +240,8 @@ Non-interactive. Grayed out. Always visible so the full 28 is represented.
 
 ## Failure → Review Flow
 
-1. Either tester marks FAIL → auto-push to Review tab
-2. Fix appears in Review with back-link to use case ID
+1. Either tester marks FAIL → auto-push to Review tab's Fixes Section (bottom inbox)
+2. Fix appears in the Fixes inbox with back-link to use case ID, promotable to a debug_review task via "Push"
 3. QA row shows red status + link to fix
 4. Developer fixes the bug
 5. Operator clicks Reset on the QA row → both statuses clear to untested
