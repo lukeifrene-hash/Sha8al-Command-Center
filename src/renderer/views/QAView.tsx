@@ -672,6 +672,36 @@ function FixesSection({ sessions, milestones, updateTracker }: {
     })
   }
 
+  const closeFix = (sessionId: string, fixIndex: number) => {
+    updateTracker(draft => {
+      const session = (draft.review_sessions ?? []).find(s => s.id === sessionId)
+      if (!session?.fixes?.[fixIndex]) return
+
+      session.fixes.splice(fixIndex, 1)
+      session.updated_at = new Date().toISOString()
+
+      const removedFixId = `${sessionId}:fix-${fixIndex}`
+      for (const group of draft.qa?.groups ?? []) {
+        for (const useCase of group.use_cases ?? []) {
+          if (!useCase.review_fix_id?.startsWith(`${sessionId}:fix-`)) continue
+
+          if (useCase.review_fix_id === removedFixId) {
+            useCase.review_fix_id = null
+            continue
+          }
+
+          const match = useCase.review_fix_id.match(new RegExp(`^${sessionId}:fix-(\\d+)$`))
+          if (!match) continue
+
+          const currentIndex = parseInt(match[1], 10)
+          if (currentIndex > fixIndex) {
+            useCase.review_fix_id = `${sessionId}:fix-${currentIndex - 1}`
+          }
+        }
+      }
+    })
+  }
+
   return (
     <div className="rounded-lg border border-border bg-surface/30 p-5">
       <div className="flex items-center justify-between mb-4">
@@ -732,6 +762,13 @@ function FixesSection({ sessions, milestones, updateTracker }: {
                     <span className="text-[9px] text-muted truncate">{fix.session_title}</span>
                   </div>
                 </div>
+                <button
+                  onClick={() => closeFix(fix.session_id, fix.fixIndex)}
+                  className="flex-shrink-0 text-[9px] font-semibold px-2 py-1 rounded-md border border-border/60 text-muted hover:text-white hover:border-border transition-colors"
+                  title="Remove this fix from the inbox"
+                >
+                  Close
+                </button>
               </div>
             )
           })}

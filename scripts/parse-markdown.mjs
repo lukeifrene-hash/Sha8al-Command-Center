@@ -1,22 +1,77 @@
 #!/usr/bin/env node
 
 /**
- * Talkstore Command Center — Markdown Parser + State File Generator
+ * Sha8al Command Center — Markdown Parser + State File Generator
  * Phase 1, Part 1.2
  *
- * Reads three source markdown files and generates talkstore-tracker.json.
- * Re-runnable: if tracker.json exists, preserves completion status of already-done items.
+ * Reads project markdown sources and generates the resolved tracker file for the active profile.
+ * Re-runnable: if the tracker exists, preserves completion status of already-done items.
+ *
+ * Usage:
+ *   node scripts/parse-markdown.mjs --consumer-profile=generic --profile=generic --tasks-source=docs/tasks.md --checklist-source=docs/submission-checklist.md
+ *   node scripts/parse-markdown.mjs --consumer-profile=talkstore --profile=talkstore --tasks-source=docs/tasks.md --checklist-source=docs/submission-checklist.md --dry-run
  */
 
-import { readFileSync, writeFileSync, existsSync } from 'fs'
-import { join } from 'path'
+import { readFileSync, existsSync } from 'fs'
+import { basename } from 'path'
+import { resolveParserProjectPaths } from './lib/project-paths.mjs'
+import { validateParserProfilePairing } from './lib/profile-validators.mjs'
+import { writeTrackerJsonWithBackup } from './lib/tracker-backup.mjs'
 
-// ─── Paths ───────────────────────────────────────────────────────────────────
+function readCliFlag(argv, keys) {
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i]
+    if (!arg.startsWith('--')) continue
 
-const TALKSTORE_ROOT = '/Users/luqman/Desktop/Projects/talkstore'
-const ROADMAP_PATH = join(TALKSTORE_ROOT, 'docs/roadmap.md')
-const CHECKLIST_PATH = join(TALKSTORE_ROOT, 'docs/submission-checklist.md')
-const OUTPUT_PATH = join(TALKSTORE_ROOT, 'talkstore-tracker.json')
+    for (const key of keys) {
+      if (arg === `--${key}`) {
+        const next = argv[i + 1]
+        if (next && !next.startsWith('--')) return next
+      }
+
+      if (arg.startsWith(`--${key}=`)) {
+        return arg.slice(key.length + 3)
+      }
+    }
+  }
+
+  return null
+}
+
+function resolveMarkdownParserId(argv = process.argv.slice(2)) {
+  const explicitProfile =
+    readCliFlag(argv, ['profile', 'parser-profile']) ||
+    process.env.COMMAND_CENTER_PARSER_PROFILE ||
+    process.env.PARSER_PROFILE ||
+    process.env.COMMAND_CENTER_PROFILE ||
+    null
+
+  if (!explicitProfile || explicitProfile === 'talkstore') {
+    return 'talkstore-markdown'
+  }
+
+  if (explicitProfile === 'generic') {
+    return 'generic-markdown'
+  }
+
+  throw new Error(
+    `No markdown parser is registered for profile "${explicitProfile}". ` +
+    'Supported markdown parser profiles: generic, talkstore.'
+  )
+}
+
+function resolveConsumerProfileOverride(argv = process.argv.slice(2)) {
+  return readCliFlag(argv, ['consumer-profile'])
+}
+
+function toDisplayProjectName(projectRoot, consumerProfile) {
+  if (consumerProfile === 'talkstore') return 'Talkstore'
+
+  const slug = basename(projectRoot)
+  return slug
+    .replace(/[-_]+/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase())
+}
 
 // ─── Reference Data from Spec ────────────────────────────────────────────────
 
@@ -382,13 +437,13 @@ function parseChecklist(content) {
 
 // ─── State File Generator ────────────────────────────────────────────────────
 
-function generateTrackerState(milestones, submissionChecklist) {
+function generateTrackerState(milestones, submissionChecklist, projectName) {
   const totalSubtasks = milestones.reduce((s, m) => s + m.subtasks.length, 0)
   const doneSubtasks = milestones.reduce((s, m) => s + m.subtasks.filter(t => t.done).length, 0)
 
   return {
     project: {
-      name: 'Talkstore',
+      name: projectName,
       start_date: '2026-03-15',
       target_submit_date: '2026-05-24',
       current_week: calculateCurrentWeek(),
@@ -436,15 +491,10 @@ function generateTrackerState(milestones, submissionChecklist) {
 
 // ─── Preserve existing completion state ──────────────────────────────────────
 
-function preserveExistingState(newState, existingPath) {
-  if (!existsSync(existingPath)) return newState
+function preserveExistingState(newState, existingTracker) {
+  if (!existingTracker) return newState
 
-  let existing
-  try {
-    existing = JSON.parse(readFileSync(existingPath, 'utf-8'))
-  } catch {
-    return newState
-  }
+  const existing = existingTracker
 
   const existingSubtasks = new Map()
   for (const m of existing.milestones || []) {
@@ -494,60 +544,130 @@ function preserveExistingState(newState, existingPath) {
   return newState
 }
 
+function readExistingTracker(existingPath) {
+  if (!existsSync(existingPath)) return null
+
+  try {
+    return JSON.parse(readFileSync(existingPath, 'utf-8'))
+  } catch (error) {
+    throw new Error(
+      `Existing tracker is not valid JSON at ${existingPath}: ` +
+      `${error instanceof Error ? error.message : String(error)}`
+    )
+  }
+}
+
 // ─── Main ────────────────────────────────────────────────────────────────────
 
 function main() {
-  console.log('Talkstore Command Center — Markdown Parser')
-  console.log('='.repeat(50))
+  try {
+    const argv = process.argv.slice(2)
+    const dryRun = argv.includes('--dry-run')
+    const parserId = resolveMarkdownParserId(argv)
+    const consumerProfile = resolveConsumerProfileOverride(argv)
+    const projectPaths = resolveParserProjectPaths({
+      parserId,
+      argv,
+      ...(consumerProfile ? { profileName: consumerProfile } : {}),
+    })
+    const tasksPath = projectPaths.tasksPath
+    const checklistPath = projectPaths.checklistPath
+    const outputPath = projectPaths.trackerPath
+    const existingTracker = readExistingTracker(outputPath)
+    const parserValidation = validateParserProfilePairing({
+      parserId,
+      projectPaths,
+      existingProject: existingTracker?.project || null,
+    })
 
-  const roadmapContent = readFileSync(ROADMAP_PATH, 'utf-8')
-  const checklistContent = readFileSync(CHECKLIST_PATH, 'utf-8')
+    console.log('Sha8al Command Center — Markdown Parser')
+    console.log('='.repeat(50))
+    console.log(`Parser/source pairing: ${parserValidation.parserSourcePairing}`)
 
-  console.log(`\nRead: ${ROADMAP_PATH}`)
-  console.log(`Read: ${CHECKLIST_PATH}`)
+    const roadmapContent = readFileSync(tasksPath, 'utf-8')
+    const checklistContent = readFileSync(checklistPath, 'utf-8')
 
-  const milestones = parseRoadmap(roadmapContent)
-  const submissionChecklist = parseChecklist(checklistContent)
+    console.log(`\nRead: ${tasksPath}`)
+    console.log(`Read: ${checklistPath}`)
 
-  let state = generateTrackerState(milestones, submissionChecklist)
-  state = preserveExistingState(state, OUTPUT_PATH)
+    const milestones = parseRoadmap(roadmapContent)
+    const submissionChecklist = parseChecklist(checklistContent)
 
-  // Recompute progress after merge
-  const totalSubtasks = state.milestones.reduce((s, m) => s + m.subtasks.length, 0)
-  const doneSubtasks = state.milestones.reduce((s, m) => s + m.subtasks.filter(t => t.done).length, 0)
-  state.project.overall_progress = totalSubtasks > 0
-    ? parseFloat((doneSubtasks / totalSubtasks).toFixed(4)) : 0
+    if (milestones.length === 0) {
+      throw new Error(
+        `No milestones were parsed from ${tasksPath}. ` +
+        'Verify that the selected source matches the markdown parser contract.'
+      )
+    }
 
-  writeFileSync(OUTPUT_PATH, JSON.stringify(state, null, 2), 'utf-8')
+    let state = generateTrackerState(
+      milestones,
+      submissionChecklist,
+      existingTracker?.project?.name || toDisplayProjectName(projectPaths.projectRoot, projectPaths.consumerProfile)
+    )
+    state = preserveExistingState(state, existingTracker)
+    state.project = {
+      ...state.project,
+      ...parserValidation.projectMetadata,
+    }
 
-  // ─── Report ───
-  console.log(`\nOutput: ${OUTPUT_PATH}`)
+    // Recompute progress after merge
+    const totalSubtasks = state.milestones.reduce((s, m) => s + m.subtasks.length, 0)
+    const doneSubtasks = state.milestones.reduce((s, m) => s + m.subtasks.filter(t => t.done).length, 0)
+    state.project.overall_progress = totalSubtasks > 0
+      ? parseFloat((doneSubtasks / totalSubtasks).toFixed(4)) : 0
 
-  const totalItems = state.submission_checklist.categories.reduce((s, c) => s + c.items.length, 0)
+    // ─── Report ───
+    console.log(`\nOutput: ${outputPath} (${basename(outputPath)})`)
 
-  console.log('\n╔══════════════════════════════════════════════╗')
-  console.log('║            PARSER REPORT                     ║')
-  console.log('╠══════════════════════════════════════════════╣')
-  console.log(`║  Milestones:          ${String(state.milestones.length).padStart(3)}                    ║`)
-  console.log(`║  Total subtasks:      ${String(totalSubtasks).padStart(3)}                    ║`)
-  console.log(`║  Checklist categories: ${String(state.submission_checklist.categories.length).padStart(2)}                    ║`)
-  console.log(`║  Checklist items:     ${String(totalItems).padStart(3)}                    ║`)
-  console.log('╚══════════════════════════════════════════════╝')
+    if (dryRun) {
+      console.log('[dry-run] NOT writing tracker')
+    } else {
+      const writeResult = writeTrackerJsonWithBackup({
+        targetPath: outputPath,
+        tracker: state,
+        label: 'parse-markdown',
+      })
 
-  console.log('\n--- MILESTONE BREAKDOWN ---')
-  for (const m of state.milestones) {
-    const d = m.domain.padEnd(15)
-    const k = m.is_key_milestone ? ` ★ ${m.key_milestone_label}` : ''
-    console.log(`  W${String(m.week).padStart(2)} | ${d} | ${m.title} (${m.subtasks.length} subtasks)${k}`)
+      if (!writeResult.changed) {
+        console.log('[write] Tracker unchanged; skipped write')
+      } else {
+        if (writeResult.backupPath) {
+          console.log(`[backup] ${writeResult.backupPath}`)
+        }
+        console.log(`[write] Wrote tracker to ${outputPath}`)
+      }
+    }
+
+    const totalItems = state.submission_checklist.categories.reduce((s, c) => s + c.items.length, 0)
+
+    console.log('\n╔══════════════════════════════════════════════╗')
+    console.log('║            PARSER REPORT                     ║')
+    console.log('╠══════════════════════════════════════════════╣')
+    console.log(`║  Milestones:          ${String(state.milestones.length).padStart(3)}                    ║`)
+    console.log(`║  Total subtasks:      ${String(totalSubtasks).padStart(3)}                    ║`)
+    console.log(`║  Checklist categories: ${String(state.submission_checklist.categories.length).padStart(2)}                    ║`)
+    console.log(`║  Checklist items:     ${String(totalItems).padStart(3)}                    ║`)
+    console.log('╚══════════════════════════════════════════════╝')
+
+    console.log('\n--- MILESTONE BREAKDOWN ---')
+    for (const m of state.milestones) {
+      const d = m.domain.padEnd(15)
+      const k = m.is_key_milestone ? ` ★ ${m.key_milestone_label}` : ''
+      console.log(`  W${String(m.week).padStart(2)} | ${d} | ${m.title} (${m.subtasks.length} subtasks)${k}`)
+    }
+
+    console.log('\n--- CHECKLIST BREAKDOWN ---')
+    for (const c of state.submission_checklist.categories) {
+      const r = c.risk_level === 'critical' ? ' ⚠️  CRITICAL' : ''
+      console.log(`  ${c.id.padEnd(20)} | W${String(c.target_week).padStart(2)} | ${c.title} (${c.items.length} items)${r}`)
+    }
+
+    console.log('\nDone.')
+  } catch (error) {
+    console.error(`ERROR: ${error instanceof Error ? error.message : String(error)}`)
+    process.exit(1)
   }
-
-  console.log('\n--- CHECKLIST BREAKDOWN ---')
-  for (const c of state.submission_checklist.categories) {
-    const r = c.risk_level === 'critical' ? ' ⚠️  CRITICAL' : ''
-    console.log(`  ${c.id.padEnd(20)} | W${String(c.target_week).padStart(2)} | ${c.title} (${c.items.length} items)${r}`)
-  }
-
-  console.log('\nDone.')
 }
 
 main()

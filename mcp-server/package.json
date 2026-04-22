@@ -1,16 +1,32 @@
 {
-  "name": "talkstore-mcp-server",
+  "name": "sha8al-command-center-mcp",
   "version": "1.0.0",
-  "description": "MCP server + CLI for the Talkstore Command Center — provides live project context and tracker updates to any AI agent",
+  "description": "Sha8al Command Center (sha8al-command-center) MCP server and CLI, with TalkStore compatibility aliases",
   "type": "module",
   "main": "dist/index.js",
+  "license": "ISC",
   "bin": {
+    "sha8al-command-center": "dist/cli.js",
     "talkstore": "dist/cli.js"
   },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch"
   },
+  "keywords": [
+    "sha8al-command-center",
+    "sha8al",
+    "command-center",
+    "mcp",
+    "cli",
+    "tracker",
+    "talkstore-compatibility"
+  ],
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1"
   },

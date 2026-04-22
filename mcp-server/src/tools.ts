@@ -3,17 +3,30 @@
  * Each tool is a function the agent can call during any Claude Code session.
  */
 
+import { readFileSync, existsSync } from 'fs'
+import { join } from 'path'
 import {
   readTracker,
   writeTracker,
   findTask,
   autoUnblockDependents,
+  TALKSTORE_ROOT,
   type TrackerState,
   type Subtask,
   type Milestone,
   type ReviewSession,
   type ReviewFix,
   type QAUseCase,
+  type MilestoneLane,
+  type AuditChecklistItem,
+  type AuditResult,
+  type ChecklistCategory,
+  type ChecklistItem,
+  type MilestoneVerdict,
+  type MilestoneFinding,
+  type MilestoneFindingSeverity,
+  type MilestoneFindingCategory,
+  type MilestoneAudit,
 } from './tracker.js'
 import {
   buildTaskContext,
@@ -22,6 +35,90 @@ import {
   buildMilestoneOverview,
   buildChecklistStatus,
 } from './context.js'
+
+// ─── Auditor Workflow Constants ─────────────────────────────────────────────
+
+/**
+ * Maps milestone IDs to their execution lane. Used by request_audit and
+ * submit_audit to decide whether an all-pass audit can auto-approve
+ * a task (foundation + product_engines lanes) or whether it must still
+ * sit in `review` for operator eyeball (merchant_facing, ship_and_operate).
+ */
+export const MILESTONE_LANE: Record<string, MilestoneLane> = {
+  m1_purge_and_foundation_reset: 'foundation',
+  m2_multi_llm_and_async_infra: 'foundation',
+  m3_scoring_engine: 'product_engines',
+  m4_catalog_intelligence_engine: 'product_engines',
+  m5_autopilot_and_guard: 'product_engines',
+  m6_attribution_pipeline: 'product_engines',
+  m7_merchant_surfaces: 'merchant_facing',
+  m8_ux_polish_and_marketing: 'merchant_facing',
+  m9_quality_security_compliance: 'ship_and_operate',
+  m10_launch_and_post_launch: 'ship_and_operate',
+}
+
+const AUTO_APPROVE_LANES: Set<MilestoneLane> = new Set(['foundation', 'product_engines'])
+
+/**
+ * Milestone → manifesto section IDs used by the Milestone Auditor bundle.
+ * IDs match the section-number prefixes in MASTER-MANIFESTO.md (e.g. "2.3"
+ * targets `### 2.3`, "8" targets `## 8.`). The extractor accepts any heading
+ * depth so callers don't need to track whether a section is `##` or `###`.
+ *
+ * Some IDs (e.g. 18.10, 18.11) don't exist in the current manifesto — they
+ * are listed here anyway so the map stays forward-compatible; missing
+ * sections simply drop out of the returned `goal_state.sections` array.
+ */
+export const MILESTONE_MANIFESTO_SECTIONS: Record<string, string[]> = {
+  m1_purge_and_foundation_reset: ['2.3', '18.1', '18.2'],
+  m2_multi_llm_and_async_infra: ['18.4', '13', '14.1'],
+  m3_scoring_engine: ['8', '9', '18.3', '18.5', '18.6', '18.7', '18.8'],
+  m4_catalog_intelligence_engine: ['9', '18.10', '18.11'],
+  m5_autopilot_and_guard: ['10', '12', '18.12', '18.13', '18.14'],
+  m6_attribution_pipeline: ['11', '18.15', '18.16', '18.17'],
+  m7_merchant_surfaces: ['7', '18.9', '18.10', '18.18', '18.19'],
+  m8_ux_polish_and_marketing: ['4', '16'],
+  m9_quality_security_compliance: ['14', '17', '22'],
+  m10_launch_and_post_launch: ['16', '17', '24'],
+}
+
+/** Absolute path to the master manifesto (read-only, verbatim excerpts). */
+const MANIFESTO_PATH = join(
+  TALKSTORE_ROOT,
+  'Brainstorming & Pivot',
+  'MASTER-MANIFESTO.md'
+)
+
+/** Relative path recorded in the audit bundle for operator display. */
+const MANIFESTO_REL_PATH = 'Brainstorming & Pivot/MASTER-MANIFESTO.md'
+
+/**
+ * 12-point audit checklist template. Returned by request_audit so the
+ * auditor can fill in status + detail per item, then pass back via
+ * submit_audit. Keep ID order stable — submit_audit validates against it.
+ */
+const CHECKLIST_TEMPLATE: AuditChecklistItem[] = [
+  // Structural (4)
+  { id: 's1', category: 'structural', label: 'Build + typecheck + lint exit 0', status: 'pending' },
+  { id: 's2', category: 'structural', label: 'Every acceptance command from prompt block passes', status: 'pending' },
+  { id: 's3', category: 'structural', label: 'Git diff scope matches task "What" field (no scope creep)', status: 'pending' },
+  { id: 's4', category: 'structural', label: 'None of task "Failure modes" triggered', status: 'pending' },
+  // Security (3)
+  { id: 'sec1', category: 'security', label: 'No secrets in committed files', status: 'pending' },
+  { id: 'sec2', category: 'security', label: 'New dependencies free of known CVEs', status: 'pending' },
+  { id: 'sec3', category: 'security', label: 'No shell/SQL/GraphQL injection via string interpolation', status: 'pending' },
+  // Compliance (3)
+  { id: 'c1', category: 'compliance', label: 'All merchant-data queries scoped with shopId', status: 'pending' },
+  { id: 'c2', category: 'compliance', label: 'Any new LLM call gated by consent check', status: 'pending' },
+  { id: 'c3', category: 'compliance', label: 'No PII in logs', status: 'pending' },
+  // Correctness (2)
+  { id: 'cor1', category: 'correctness', label: 'Tests added/updated for new behavior', status: 'pending' },
+  { id: 'cor2', category: 'correctness', label: 'Migrations reversible (if schema changed)', status: 'pending' },
+]
+
+function getMilestoneLane(milestoneId: string): MilestoneLane {
+  return MILESTONE_LANE[milestoneId] ?? 'merchant_facing'
+}
 
 // ─── Tool Definitions (JSON Schema for MCP) ─────────────────────────────────
 
@@ -842,6 +939,289 @@ export const TOOL_DEFINITIONS = [
       required: ['use_case_id'],
     },
   },
+  // ─── Three-phase workflow tools (sweep / prepare / build) ─────────────────
+  {
+    name: 'claim_next_task',
+    description:
+      'Atomically claim the next eligible todo task. Filters by tier (complexity), milestone_id, and/or execution_mode. ' +
+      'Only returns tasks whose depends_on are all done. Flips status to in_progress and sets assignee to agent_id. ' +
+      'Sort order: parallel_priority ascending, then id. Used by the `sweep` phase to let multiple agents (Claude, Codex) ' +
+      'pick up work without collisions. Returns full task context for the claimed task, or `{ task: null, reason }` if none.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        tier: {
+          type: 'string',
+          enum: ['small', 'medium', 'large', 'architectural'],
+          description: 'Filter by subtask.complexity (optional)',
+        },
+        milestone_id: {
+          type: 'string',
+          description: 'Filter tasks to this milestone (optional)',
+        },
+        execution_mode: {
+          type: 'string',
+          enum: ['human', 'agent', 'pair'],
+          description: 'Filter by execution_mode (optional)',
+        },
+        agent_id: {
+          type: 'string',
+          description: 'Agent claiming the task — becomes the task assignee. Defaults to "claude_code".',
+        },
+      },
+    },
+  },
+  {
+    name: 'compute_waves',
+    description:
+      'Group a milestone\'s remaining tasks (status=todo or blocked) into parallel execution waves by parallel_priority. ' +
+      'Each wave is a set of tasks that can run simultaneously once the previous wave completes. ' +
+      'Returns structured data: { milestone_id, waves: [{ wave, tasks: [...] }] }.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        milestone_id: {
+          type: 'string',
+          description: 'Milestone ID to compute waves for',
+        },
+        tier: {
+          type: 'string',
+          enum: ['small', 'medium', 'large', 'architectural'],
+          description: 'Optional filter by subtask.complexity',
+        },
+      },
+      required: ['milestone_id'],
+    },
+  },
+  {
+    name: 'bulk_prepare',
+    description:
+      'Return the list of non-small tasks in a milestone that still need preparation (prompt enrichment). ' +
+      'Filters to status=todo|blocked, complexity in (medium|large|architectural), and prepared !== true. ' +
+      'Does NOT execute preparation — it only returns the batch so the orchestrator can fan out Explorer+Researcher pairs.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        milestone_id: {
+          type: 'string',
+          description: 'Milestone ID whose tasks should be prepared',
+        },
+        tier: {
+          type: 'string',
+          enum: ['medium', 'large', 'architectural'],
+          description: 'Optional filter by complexity (default: all non-small tiers)',
+        },
+      },
+      required: ['milestone_id'],
+    },
+  },
+  {
+    name: 'check_file_collisions',
+    description:
+      'Inspect a batch of task prompts, extract file path tokens (e.g. app/lib/foo.ts, prisma/schema.prisma), and ' +
+      'return any file referenced by 2+ tasks. Used before launching a parallel wave to avoid agents stomping each other.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        task_ids: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Array of subtask IDs to inspect',
+        },
+      },
+      required: ['task_ids'],
+    },
+  },
+  // ─── Auditor workflow tools (auto-approve pipeline) ──────────────────────
+  {
+    name: 'request_audit',
+    description:
+      'Begin a post-build audit on a task in `review` status. Returns the full task context, milestone lane, ' +
+      'auto-approve eligibility, and the 12-point audit checklist template (structural, security, compliance, correctness). ' +
+      'The auditor fills in each item\'s status + detail, then calls submit_audit. Tasks in foundation or product_engines ' +
+      'lanes auto-approve when all 12 checks pass; other lanes always require operator review.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        task_id: {
+          type: 'string',
+          description: 'The subtask ID to audit (must be in review status)',
+        },
+        cross_model: {
+          type: 'boolean',
+          description: 'Whether the orchestrator requested a second, cross-model auditor. Recorded on the log entry.',
+        },
+        auditor_id: {
+          type: 'string',
+          description: 'The auditor agent ID (e.g. "claude_code", "codex", "auditor"). Defaults to "auditor".',
+        },
+      },
+      required: ['task_id'],
+    },
+  },
+  {
+    name: 'submit_audit',
+    description:
+      'Submit the filled-in 12-point checklist for a task in review. If every item is pass/n-a AND the milestone is in ' +
+      '`foundation` or `product_engines` lane, the task auto-approves (review → done, fires autoUnblockDependents). ' +
+      'Otherwise the task stays in review with the audit report attached for operator eyeball.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        task_id: {
+          type: 'string',
+          description: 'The subtask ID being audited',
+        },
+        results: {
+          type: 'array',
+          description: 'The 12 checklist items with status filled in. Must include every template ID (s1-s4, sec1-sec3, c1-c3, cor1-cor2).',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'string' },
+              category: { type: 'string', enum: ['structural', 'security', 'compliance', 'correctness'] },
+              label: { type: 'string' },
+              status: { type: 'string', enum: ['pass', 'fail', 'n/a'] },
+              detail: { type: 'string' },
+            },
+            required: ['id', 'status'],
+          },
+        },
+        auditor_id: {
+          type: 'string',
+          description: 'The auditor agent ID (e.g. "claude_code", "codex", "auditor").',
+        },
+        auditor_summary: {
+          type: 'string',
+          description: 'Optional one-paragraph summary of the audit outcome.',
+        },
+      },
+      required: ['task_id', 'results', 'auditor_id'],
+    },
+  },
+  {
+    name: 'get_next_actionable_tasks',
+    description:
+      'Return the set of tasks that are actionable right now (status=todo, not blocked), sorted by parallel_priority then id. ' +
+      'Optionally filter by milestone_id and/or complexity tier. Backs the operator\'s `next` command for surfacing ready work. ' +
+      'Results include a tier histogram.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        milestone_id: {
+          type: 'string',
+          description: 'Filter to this milestone (optional)',
+        },
+        tier: {
+          type: 'string',
+          enum: ['small', 'medium', 'large', 'architectural'],
+          description: 'Filter by complexity tier (optional)',
+        },
+        limit: {
+          type: 'number',
+          description: 'Max tasks to return (default 20)',
+        },
+      },
+    },
+  },
+  // ─── Milestone Auditor subsystem ─────────────────────────────────────────
+  {
+    name: 'start_milestone_audit',
+    description:
+      'Begin a post-milestone audit. Validates that ALL subtasks in the milestone are done, then assembles the full ' +
+      'audit-context bundle (manifesto goal-state excerpts, prior state doc, per-subtask summary with audit results, ' +
+      'exit criteria, linked submission-checklist categories, and a git diff-range hint) for the orchestrator and its ' +
+      'four sub-agents (coherence, security, UX, compliance). Returns an error without logging if any subtask is still ' +
+      'in todo/in_progress/review/blocked. Logs start_milestone_audit on success.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        milestone_id: {
+          type: 'string',
+          description: 'The milestone ID (e.g. "m1_purge_and_foundation_reset")',
+        },
+      },
+      required: ['milestone_id'],
+    },
+  },
+  {
+    name: 'submit_milestone_audit',
+    description:
+      'Record the outcome of a milestone audit. Writes a MilestoneAudit record (verdict, findings, report path, state ' +
+      'doc path) onto the milestone and applies a batch of submission-checklist updates (check/uncheck). Missing ' +
+      'checklist item_ids are skipped and surfaced in the response. Audit is informational only — does NOT gate ' +
+      'downstream milestones. Logs submit_milestone_audit with verdict, finding counts, and checklist update counts.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        milestone_id: { type: 'string', description: 'The milestone ID being audited' },
+        verdict: {
+          type: 'string',
+          enum: ['pass', 'pass_with_notes', 'fail'],
+          description: 'Overall audit verdict',
+        },
+        findings: {
+          type: 'array',
+          description: 'Findings from the four sub-agents. May be empty on a clean pass.',
+          items: {
+            type: 'object',
+            properties: {
+              severity: { type: 'string', enum: ['critical', 'major', 'minor'] },
+              category: { type: 'string', enum: ['coherence', 'security', 'ux', 'compliance'] },
+              description: { type: 'string' },
+              evidence: { type: 'string' },
+              remediation: { type: 'string' },
+            },
+            required: ['severity', 'category', 'description', 'evidence'],
+          },
+        },
+        checklist_updates: {
+          type: 'array',
+          description: 'Batch of check/uncheck actions on submission-checklist items (by full item_id like "oauth_session_01").',
+          items: {
+            type: 'object',
+            properties: {
+              item_id: { type: 'string' },
+              action: { type: 'string', enum: ['check', 'uncheck'] },
+              reason: { type: 'string' },
+            },
+            required: ['item_id', 'action', 'reason'],
+          },
+        },
+        report_path: {
+          type: 'string',
+          description: 'Relative path to the audit report markdown (e.g. "docs/audit-reports/m3-audit.md")',
+        },
+        state_doc_path: {
+          type: 'string',
+          description: 'Relative path to the "after-milestone" state doc (e.g. "docs/state/after-m3-state.md")',
+        },
+        audited_at: {
+          type: 'string',
+          description: 'ISO timestamp; defaults to now',
+        },
+        auditor_id: {
+          type: 'string',
+          description: 'Agent id recorded on the log entry. Defaults to "milestone-auditor".',
+        },
+      },
+      required: ['milestone_id', 'verdict', 'findings', 'checklist_updates', 'report_path', 'state_doc_path'],
+    },
+  },
+  {
+    name: 'get_milestone_audit_context',
+    description:
+      'Return the same audit-context bundle as start_milestone_audit, but WITHOUT validating readiness and WITHOUT ' +
+      'mutating state. Safe to call at any time — useful for re-entering a mid-audit session or inspecting the bundle ' +
+      'without kicking off the formal audit. Does not log.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        milestone_id: { type: 'string', description: 'The milestone ID' },
+      },
+      required: ['milestone_id'],
+    },
+  },
 ]
 
 // ─── Tool Handlers ──────────────────────────────────────────────────────────
@@ -983,6 +1363,61 @@ export async function handleTool(
           args.depends_on as string[] | undefined,
           args.execution_mode as string | undefined
         )
+      case 'claim_next_task':
+        return handleClaimNextTask(
+          args.tier as string | undefined,
+          args.milestone_id as string | undefined,
+          args.execution_mode as string | undefined,
+          args.agent_id as string | undefined
+        )
+      case 'compute_waves':
+        return handleComputeWaves(
+          args.milestone_id as string,
+          args.tier as string | undefined
+        )
+      case 'bulk_prepare':
+        return handleBulkPrepare(
+          args.milestone_id as string,
+          args.tier as string | undefined
+        )
+      case 'check_file_collisions':
+        return handleCheckFileCollisions(
+          (args.task_ids as string[]) || []
+        )
+      case 'request_audit':
+        return handleRequestAudit(
+          args.task_id as string,
+          args.cross_model as boolean | undefined,
+          args.auditor_id as string | undefined
+        )
+      case 'submit_audit':
+        return handleSubmitAudit(
+          args.task_id as string,
+          (args.results as AuditChecklistItem[]) || [],
+          args.auditor_id as string,
+          args.auditor_summary as string | undefined
+        )
+      case 'get_next_actionable_tasks':
+        return handleGetNextActionableTasks(
+          args.milestone_id as string | undefined,
+          args.tier as string | undefined,
+          args.limit as number | undefined
+        )
+      case 'start_milestone_audit':
+        return handleStartMilestoneAudit(args.milestone_id as string)
+      case 'submit_milestone_audit':
+        return handleSubmitMilestoneAudit(
+          args.milestone_id as string,
+          args.verdict as MilestoneVerdict,
+          (args.findings as MilestoneFinding[]) || [],
+          (args.checklist_updates as Array<{ item_id: string; action: 'check' | 'uncheck'; reason: string }>) || [],
+          args.report_path as string,
+          args.state_doc_path as string,
+          args.audited_at as string | undefined,
+          args.auditor_id as string | undefined
+        )
+      case 'get_milestone_audit_context':
+        return handleGetMilestoneAuditContext(args.milestone_id as string)
       default:
         return { content: [{ type: 'text', text: `Unknown tool: ${name}` }], isError: true }
     }
@@ -1133,25 +1568,60 @@ function handleCompleteTask(taskId: string, summary: string, agentId?: string) {
   const resolvedAgentId = agentId || 'claude_code'
   const { subtask, milestone } = match
   const task = milestone.subtasks.find((s) => s.id === taskId)!
-  task.status = 'review'
+  const lane = getMilestoneLane(milestone.id)
+  const autoApproveSmallTask = task.complexity === 'small' && AUTO_APPROVE_LANES.has(lane)
+  const now = new Date().toISOString()
+
+  task.status = autoApproveSmallTask ? 'done' : 'review'
   task.blocked_by = null
   task.blocked_reason = null
 
-  const runId = `run_${Date.now()}`
-  state.agent_log.push({
-    id: runId,
-    agent_id: resolvedAgentId,
-    action: 'task_submitted_for_review',
-    target_type: 'subtask',
-    target_id: taskId,
-    description: summary,
-    timestamp: new Date().toISOString(),
-    tags: ['review', 'mcp'],
-  })
+  if (autoApproveSmallTask) {
+    task.done = true
+    task.completed_at = now
+    task.completed_by = resolvedAgentId
+
+    state.agent_log.push({
+      id: `run_${Date.now()}`,
+      agent_id: resolvedAgentId,
+      action: 'task_auto_approved',
+      target_type: 'subtask',
+      target_id: taskId,
+      description: `Auto-approved on complete_task (${lane} lane, small task). ${summary}`,
+      timestamp: now,
+      tags: ['complete', 'auto-approved', 'done', 'mcp'],
+    })
+  } else {
+    const runId = `run_${Date.now()}`
+    state.agent_log.push({
+      id: runId,
+      agent_id: resolvedAgentId,
+      action: 'task_submitted_for_review',
+      target_type: 'subtask',
+      target_id: taskId,
+      description: summary,
+      timestamp: now,
+      tags: ['review', 'mcp'],
+    })
+  }
 
   // Calculate new milestone progress
   const done = milestone.subtasks.filter((s) => s.done).length
   const total = milestone.subtasks.length
+  const extras: string[] = []
+
+  if (autoApproveSmallTask) {
+    if (done === total && !milestone.actual_end) {
+      milestone.actual_end = now.split('T')[0]
+      extras.push(`Milestone "${milestone.title}" fully complete — actual_end set to ${milestone.actual_end}`)
+    }
+
+    const unblockedMessages = autoUnblockDependents(state, taskId, milestone.id)
+    if (unblockedMessages.length > 0) {
+      extras.push(`\nAuto-unblocked ${unblockedMessages.length} task(s):`)
+      extras.push(...unblockedMessages.map((message) => `  • ${message}`))
+    }
+  }
 
   touchAgent(state, resolvedAgentId)
   writeTracker(state)
@@ -1159,7 +1629,9 @@ function handleCompleteTask(taskId: string, summary: string, agentId?: string) {
   return {
     content: [{
       type: 'text' as const,
-      text: `Task "${taskId}" submitted for review.\n\nSummary: ${summary}\nMilestone progress: ${done}/${total} done\n\nThe operator will review and either approve (→ done) or request revisions (→ in_progress with feedback).`,
+      text: autoApproveSmallTask
+        ? `Task "${taskId}" auto-approved and marked as done.\n\nSummary: ${summary}\nMilestone progress: ${done}/${total}${extras.length > 0 ? '\n' + extras.join('\n') : ''}`
+        : `Task "${taskId}" submitted for review.\n\nSummary: ${summary}\nMilestone progress: ${done}/${total} done\n\nThe operator will review and either approve (→ done) or request revisions (→ in_progress with feedback).`,
     }],
   }
 }
@@ -1472,6 +1944,17 @@ function handleEnrichTask(
   if (builderPrompt !== undefined) {
     task.builder_prompt = builderPrompt || null
     changes.push(`builder_prompt → ${builderPrompt}`)
+    // A non-empty builder_prompt is the canonical "prep complete" signal.
+    // It's what the build phase reads to execute the task, and what bulk_prepare
+    // filters on (prepared !== true). Flip the flag so /auto + /build stop
+    // asking the operator to re-prepare already-prepared work.
+    if (builderPrompt) {
+      task.prepared = true
+      changes.push('prepared → true')
+    } else {
+      task.prepared = false
+      changes.push('prepared → false')
+    }
   }
   if (acceptanceCriteria !== undefined) {
     task.acceptance_criteria = acceptanceCriteria
@@ -2373,5 +2856,1100 @@ function handleAddMilestoneTask(
       type: 'text' as const,
       text: `Added task "${label}" (${taskId}) to milestone "${milestone.title}". Total tasks: ${milestone.subtasks.length}.`,
     }],
+  }
+}
+
+// Three-phase workflow handlers (sweep / prepare / build)
+
+/**
+ * Returns true if every dependency in task.depends_on is satisfied.
+ * A dep is satisfied if it matches another subtask that is done, or a
+ * milestone whose every subtask is done.
+ */
+function depsSatisfied(state: TrackerState, task: Subtask): boolean {
+  const deps = task.depends_on || []
+  if (deps.length === 0) return true
+
+  for (const depId of deps) {
+    const sub = findTask(state, depId)
+    if (sub) {
+      if (!sub.subtask.done) return false
+      continue
+    }
+
+    const ms = state.milestones.find((m) => m.id === depId)
+    if (ms) {
+      const allDone = ms.subtasks.every((s) => s.done)
+      if (!allDone) return false
+      continue
+    }
+
+    // Unknown dep id — treat as unsatisfied so we don't claim a task with
+    // a dangling dependency.
+    return false
+  }
+
+  return true
+}
+
+function handleClaimNextTask(
+  tier?: string,
+  milestoneId?: string,
+  executionMode?: string,
+  agentId?: string
+) {
+  const state = readTracker()
+  const resolvedAgentId = agentId || 'claude_code'
+
+  const eligible: { task: Subtask; milestone: Milestone }[] = []
+
+  for (const ms of state.milestones) {
+    if (milestoneId && ms.id !== milestoneId) continue
+    for (const task of ms.subtasks) {
+      if (task.status !== 'todo') continue
+      if (tier && task.complexity !== tier) continue
+      if (executionMode && task.execution_mode !== executionMode) continue
+      if (!depsSatisfied(state, task)) continue
+      eligible.push({ task, milestone: ms })
+    }
+  }
+
+  if (eligible.length === 0) {
+    const filterDesc = [
+      tier ? `tier=${tier}` : null,
+      milestoneId ? `milestone=${milestoneId}` : null,
+      executionMode ? `mode=${executionMode}` : null,
+    ].filter(Boolean).join(', ') || 'none'
+    return {
+      content: [{
+        type: 'text' as const,
+        text: JSON.stringify({
+          task: null,
+          reason: `No eligible todo tasks match filters [${filterDesc}] with all depends_on satisfied.`,
+        }, null, 2),
+      }],
+    }
+  }
+
+  // Deterministic sort: parallel_priority asc (undefined => Infinity), then id asc
+  eligible.sort((a, b) => {
+    const pa = a.task.parallel_priority ?? Number.POSITIVE_INFINITY
+    const pb = b.task.parallel_priority ?? Number.POSITIVE_INFINITY
+    if (pa !== pb) return pa - pb
+    return a.task.id.localeCompare(b.task.id)
+  })
+
+  const chosen = eligible[0]
+  const { task, milestone } = chosen
+
+  // Atomic claim: flip to in_progress and set assignee before writing.
+  task.status = 'in_progress'
+  task.assignee = resolvedAgentId
+  const runId = `run_${Date.now()}_${task.id}`
+  task.last_run_id = runId
+
+  // Auto-stamp milestone actual_start
+  if (!milestone.actual_start) {
+    milestone.actual_start = new Date().toISOString().split('T')[0]
+    if (milestone.planned_start) {
+      const planned = new Date(milestone.planned_start)
+      const actual = new Date(milestone.actual_start)
+      milestone.drift_days = Math.round((actual.getTime() - planned.getTime()) / (1000 * 60 * 60 * 24))
+    }
+  }
+
+  state.agent_log.push({
+    id: runId,
+    agent_id: resolvedAgentId,
+    action: 'claim_next_task',
+    target_type: 'subtask',
+    target_id: task.id,
+    description: `Claimed task "${task.label}" (tier=${task.complexity ?? 'n/a'}, priority=${task.parallel_priority ?? 'n/a'})`,
+    timestamp: new Date().toISOString(),
+    tags: ['claim', 'sweep', 'mcp'],
+  })
+
+  touchAgent(state, resolvedAgentId)
+  writeTracker(state)
+
+  const context = buildTaskContext(state, task, milestone)
+  const payload = {
+    task: {
+      id: task.id,
+      label: task.label,
+      status: task.status,
+      milestone_id: milestone.id,
+      complexity: task.complexity ?? null,
+      parallel_priority: task.parallel_priority ?? null,
+      execution_mode: task.execution_mode,
+      depends_on: task.depends_on,
+      assignee: task.assignee,
+    },
+    context,
+  }
+
+  return {
+    content: [{ type: 'text' as const, text: JSON.stringify(payload, null, 2) }],
+  }
+}
+
+function handleComputeWaves(milestoneId: string, tier?: string) {
+  const state = readTracker()
+  const milestone = state.milestones.find((m) => m.id === milestoneId)
+  if (!milestone) {
+    return {
+      content: [{ type: 'text' as const, text: `Milestone "${milestoneId}" not found.` }],
+      isError: true,
+    }
+  }
+
+  const candidates = milestone.subtasks.filter((s) => {
+    if (s.status !== 'todo' && s.status !== 'blocked') return false
+    if (tier && s.complexity !== tier) return false
+    return true
+  })
+
+  const byWave = new Map<number, Subtask[]>()
+  for (const t of candidates) {
+    const key = t.parallel_priority ?? 9999
+    if (!byWave.has(key)) byWave.set(key, [])
+    byWave.get(key)!.push(t)
+  }
+
+  const waves = [...byWave.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([wave, tasks]) => ({
+      wave,
+      tasks: tasks
+        .sort((a, b) => a.id.localeCompare(b.id))
+        .map((t) => ({
+          id: t.id,
+          label: t.label,
+          status: t.status,
+          depends_on: t.depends_on,
+          execution_mode: t.execution_mode,
+          complexity: t.complexity ?? null,
+        })),
+    }))
+
+  const payload = { milestone_id: milestoneId, waves }
+  return {
+    content: [{ type: 'text' as const, text: JSON.stringify(payload, null, 2) }],
+  }
+}
+
+function handleBulkPrepare(milestoneId: string, tier?: string) {
+  const state = readTracker()
+  const milestone = state.milestones.find((m) => m.id === milestoneId)
+  if (!milestone) {
+    return {
+      content: [{ type: 'text' as const, text: `Milestone "${milestoneId}" not found.` }],
+      isError: true,
+    }
+  }
+
+  const nonSmallTiers = new Set(['medium', 'large', 'architectural'])
+  const allowedTiers = tier ? new Set([tier]) : nonSmallTiers
+
+  const tasks = milestone.subtasks
+    .filter((t) => (t.status === 'todo' || t.status === 'blocked'))
+    .filter((t) => t.complexity && allowedTiers.has(t.complexity))
+    .filter((t) => t.prepared !== true)
+    .map((t) => ({
+      id: t.id,
+      label: t.label,
+      complexity: t.complexity ?? null,
+      prompt: t.prompt,
+      depends_on: t.depends_on,
+      parallel_priority: t.parallel_priority ?? null,
+      execution_mode: t.execution_mode,
+    }))
+
+  const payload = { milestone_id: milestoneId, tasks }
+  return {
+    content: [{ type: 'text' as const, text: JSON.stringify(payload, null, 2) }],
+  }
+}
+
+/**
+ * Extract file-path-like tokens from a string.
+ * Looks for sequences that contain at least one '/' and one dot-extension,
+ * plus a short list of bare filenames that commonly appear in prompts.
+ */
+function extractFileTokens(text: string): Set<string> {
+  const tokens = new Set<string>()
+  if (!text) return tokens
+
+  // Match path-ish tokens like:
+  //   app/lib/capabilities/headroom.ts
+  //   prisma/schema.prisma
+  //   src/renderer/views/Foo.tsx
+  //   .claude/rules/something.md
+  const pathRe = /(?:^|[\s`'"(<>[\]|,])((?:\.?[\w.-]+\/)+[\w.-]+\.[\w]+)/g
+
+  let m: RegExpExecArray | null
+  while ((m = pathRe.exec(text)) !== null) {
+    tokens.add(m[1])
+  }
+
+  // Bare config/root files that lack a directory prefix
+  const bareFiles = [
+    'shopify.app.toml',
+    'package.json',
+    'tsconfig.json',
+    'vite.config.ts',
+    'vitest.config.ts',
+  ]
+  for (const f of bareFiles) {
+    const re = new RegExp(`(?:^|[\\s\`'"(<>\\[\\]|,])${f.replace(/[.]/g, '\\.')}(?:[\\s\`'".,;:)]|$)`)
+    if (re.test(text)) tokens.add(f)
+  }
+
+  return tokens
+}
+
+function handleCheckFileCollisions(taskIds: string[]) {
+  if (!Array.isArray(taskIds) || taskIds.length === 0) {
+    return {
+      content: [{ type: 'text' as const, text: `task_ids must be a non-empty array.` }],
+      isError: true,
+    }
+  }
+
+  const state = readTracker()
+  const fileToTasks = new Map<string, Set<string>>()
+  const missing: string[] = []
+
+  for (const id of taskIds) {
+    const match = findTask(state, id)
+    if (!match) {
+      missing.push(id)
+      continue
+    }
+    const { subtask } = match
+
+    const promptText = subtask.prompt ?? ''
+    const extraText = [
+      ...(subtask.acceptance_criteria || []),
+      ...(subtask.constraints || []),
+      subtask.notes ?? '',
+      subtask.builder_prompt ?? '',
+    ].join('\n')
+    const contextFiles = subtask.context_files || []
+
+    const tokens = extractFileTokens(promptText + '\n' + extraText)
+    for (const f of contextFiles) tokens.add(f)
+
+    for (const tok of tokens) {
+      if (!fileToTasks.has(tok)) fileToTasks.set(tok, new Set())
+      fileToTasks.get(tok)!.add(id)
+    }
+  }
+
+  const collisions = [...fileToTasks.entries()]
+    .filter(([, ids]) => ids.size >= 2)
+    .map(([file, ids]) => ({
+      file,
+      task_ids: [...ids].sort(),
+    }))
+    .sort((a, b) => a.file.localeCompare(b.file))
+
+  const payload = {
+    collisions,
+    ...(missing.length > 0 ? { missing_task_ids: missing } : {}),
+  }
+
+  return {
+    content: [{ type: 'text' as const, text: JSON.stringify(payload, null, 2) }],
+  }
+}
+
+// ─── Auditor Workflow Handlers ──────────────────────────────────────────────
+
+function handleRequestAudit(
+  taskId: string,
+  crossModel?: boolean,
+  auditorId?: string
+) {
+  const state = readTracker()
+  const match = findTask(state, taskId)
+  if (!match) {
+    return {
+      content: [{ type: 'text' as const, text: JSON.stringify({ error: `Task "${taskId}" not found.` }) }],
+      isError: true,
+    }
+  }
+
+  const { subtask, milestone } = match
+  if (subtask.status !== 'review') {
+    return {
+      content: [{ type: 'text' as const, text: JSON.stringify({ error: 'Task not in review status' }) }],
+      isError: true,
+    }
+  }
+
+  const resolvedAuditorId = auditorId || 'auditor'
+  const lane = getMilestoneLane(milestone.id)
+  const autoApproveEligible = AUTO_APPROVE_LANES.has(lane)
+
+  // Build the full task context (same shape as get_task_context) for the auditor.
+  // Some legacy tasks in the tracker JSON predate the Subtask shape and may be
+  // missing fields like acceptance_criteria — fall back to a minimal block in
+  // that case rather than crashing the audit request.
+  let promptBlock: string
+  try {
+    promptBlock = buildTaskContext(state, subtask, milestone)
+  } catch (err) {
+    promptBlock =
+      `# Task: ${subtask.label}\n` +
+      `- **ID:** ${subtask.id}\n` +
+      `- **Status:** ${subtask.status}\n` +
+      `- **Milestone:** ${milestone.title} (${milestone.id})\n\n` +
+      (subtask.prompt ? `## Prompt\n${subtask.prompt}\n\n` : '') +
+      `*Note: full buildTaskContext threw (${err instanceof Error ? err.message : String(err)}). ` +
+      `This task predates the current Subtask shape; the auditor should rely on the raw task payload.*`
+  }
+
+  // Fresh checklist copy (never hand out the shared module-level template).
+  const checklist: AuditChecklistItem[] = CHECKLIST_TEMPLATE.map((item) => ({ ...item }))
+
+  state.agent_log.push({
+    id: `log_${Date.now()}_${taskId}_request_audit`,
+    agent_id: resolvedAuditorId,
+    action: 'request_audit',
+    target_type: 'subtask',
+    target_id: taskId,
+    description:
+      `Audit requested for "${subtask.label}" (lane=${lane}, auto_approve_eligible=${autoApproveEligible}` +
+      `${crossModel ? ', cross_model=true' : ''})`,
+    timestamp: new Date().toISOString(),
+    tags: ['audit', 'request', 'mcp', ...(crossModel ? ['cross-model'] : [])],
+  })
+
+  touchAgent(state, resolvedAuditorId)
+  writeTracker(state)
+
+  const payload = {
+    task_id: taskId,
+    task: subtask,
+    prompt: promptBlock,
+    acceptance_criteria: subtask.acceptance_criteria ?? [],
+    milestone_id: milestone.id,
+    milestone_lane: lane,
+    auto_approve_eligible: autoApproveEligible,
+    checklist,
+    cross_model_requested: Boolean(crossModel),
+  }
+
+  return {
+    content: [{ type: 'text' as const, text: JSON.stringify(payload, null, 2) }],
+  }
+}
+
+function handleSubmitAudit(
+  taskId: string,
+  results: AuditChecklistItem[],
+  auditorId: string,
+  auditorSummary?: string
+) {
+  const state = readTracker()
+  const match = findTask(state, taskId)
+  if (!match) {
+    return {
+      content: [{ type: 'text' as const, text: JSON.stringify({ error: `Task "${taskId}" not found.` }) }],
+      isError: true,
+    }
+  }
+
+  const { subtask, milestone } = match
+  const task = milestone.subtasks.find((s) => s.id === taskId)!
+
+  if (task.status !== 'review') {
+    return {
+      content: [{ type: 'text' as const, text: JSON.stringify({ error: `Task "${taskId}" is not in review (current: ${task.status}).` }) }],
+      isError: true,
+    }
+  }
+
+  if (!Array.isArray(results) || results.length === 0) {
+    return {
+      content: [{ type: 'text' as const, text: JSON.stringify({ error: 'results must be a non-empty array of AuditChecklistItem.' }) }],
+      isError: true,
+    }
+  }
+
+  // Validate: every template ID must be represented, status must be pass/fail/n/a.
+  const validStatuses = new Set(['pass', 'fail', 'n/a'])
+  const templateIds = new Set(CHECKLIST_TEMPLATE.map((t) => t.id))
+  const resultIds = new Set(results.map((r) => r.id))
+
+  const missingIds = [...templateIds].filter((id) => !resultIds.has(id))
+  if (missingIds.length > 0) {
+    return {
+      content: [{ type: 'text' as const, text: JSON.stringify({ error: `Missing required checklist items: ${missingIds.join(', ')}` }) }],
+      isError: true,
+    }
+  }
+
+  for (const r of results) {
+    if (!templateIds.has(r.id)) {
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify({ error: `Unknown checklist item id: ${r.id}` }) }],
+        isError: true,
+      }
+    }
+    if (!validStatuses.has(r.status)) {
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify({ error: `Invalid status for ${r.id}: ${r.status}. Must be pass|fail|n/a.` }) }],
+        isError: true,
+      }
+    }
+  }
+
+  // Canonicalize items: preserve template order + label/category; trust auditor's status + detail.
+  const byResultId = new Map(results.map((r) => [r.id, r] as const))
+  const canonicalItems: AuditChecklistItem[] = CHECKLIST_TEMPLATE.map((tmpl) => {
+    const r = byResultId.get(tmpl.id)!
+    return {
+      id: tmpl.id,
+      category: tmpl.category,
+      label: tmpl.label,
+      status: r.status,
+      ...(r.detail !== undefined ? { detail: r.detail } : {}),
+    }
+  })
+
+  const pass = canonicalItems.every((i) => i.status !== 'fail')
+  const lane = getMilestoneLane(milestone.id)
+  const autoApproveEligible = AUTO_APPROVE_LANES.has(lane)
+  const autoApproved = pass && autoApproveEligible
+
+  const now = new Date().toISOString()
+  const auditResult: AuditResult = {
+    auditor_id: auditorId,
+    audited_at: now,
+    pass,
+    items: canonicalItems,
+    ...(auditorSummary ? { summary: auditorSummary } : {}),
+  }
+
+  task.audit_results = auditResult
+
+  const failedItems = canonicalItems.filter((i) => i.status === 'fail')
+  const reasoning = autoApproved
+    ? `Auto-approved: ${lane} lane + all 12 checks pass`
+    : !pass
+      ? `Review: ${failedItems.length} check(s) failed (${failedItems.map((i) => i.id).join(', ')})`
+      : `Review: ${lane} lane requires operator review`
+
+  const unblocked: string[] = []
+
+  if (autoApproved) {
+    // Internal approval — mirror handleApproveTask's write path so we keep
+    // the same side-effects (autoUnblockDependents + actual_end stamp).
+    task.status = 'done'
+    task.done = true
+    task.completed_at = now
+    task.completed_by = auditorId
+
+    // Auto-stamp milestone actual_end if all tasks are now done.
+    const done = milestone.subtasks.filter((s) => s.done).length
+    const total = milestone.subtasks.length
+    if (done === total && !milestone.actual_end) {
+      milestone.actual_end = now.split('T')[0]
+    }
+
+    const unblockedMessages = autoUnblockDependents(state, taskId, milestone.id)
+    // Extract the bare task IDs from the human-readable messages.
+    for (const msg of unblockedMessages) {
+      const m = msg.match(/Task "([^"]+)"/)
+      if (m) unblocked.push(m[1])
+    }
+
+    state.agent_log.push({
+      id: `log_${Date.now()}_${taskId}_auto_approved`,
+      agent_id: auditorId,
+      action: 'task_auto_approved',
+      target_type: 'subtask',
+      target_id: taskId,
+      description:
+        `Auto-approved by auditor ${auditorId} — all 12 audit checks pass (${lane} lane)` +
+        (auditorSummary ? `. ${auditorSummary}` : ''),
+      timestamp: now,
+      tags: ['audit', 'auto-approved', 'done', 'mcp'],
+    })
+  }
+
+  // Always log submit_audit itself.
+  state.agent_log.push({
+    id: `log_${Date.now()}_${taskId}_submit_audit`,
+    agent_id: auditorId,
+    action: 'submit_audit',
+    target_type: 'subtask',
+    target_id: taskId,
+    description: `Audit submitted — pass=${pass}, lane=${lane}, auto_approved=${autoApproved}. ${reasoning}`,
+    timestamp: now,
+    tags: ['audit', 'submit', pass ? 'pass' : 'fail', autoApproved ? 'auto-approved' : 'review', 'mcp'],
+  })
+
+  touchAgent(state, auditorId)
+  writeTracker(state)
+
+  const payload = {
+    auto_approved: autoApproved,
+    new_status: (autoApproved ? 'done' : 'review') as 'done' | 'review',
+    reasoning,
+    ...(autoApproved && unblocked.length > 0 ? { unblocked_tasks: unblocked } : {}),
+  }
+
+  return {
+    content: [{ type: 'text' as const, text: JSON.stringify(payload, null, 2) }],
+  }
+}
+
+function handleGetNextActionableTasks(
+  milestoneId?: string,
+  tier?: string,
+  limit?: number
+) {
+  const state = readTracker()
+  const resolvedLimit = typeof limit === 'number' && limit > 0 ? limit : 20
+
+  const eligible: { task: Subtask; milestone: Milestone }[] = []
+  for (const ms of state.milestones) {
+    if (milestoneId && ms.id !== milestoneId) continue
+    for (const task of ms.subtasks) {
+      if (task.status !== 'todo') continue
+      if (tier && task.complexity !== tier) continue
+      if (!depsSatisfied(state, task)) continue
+      eligible.push({ task, milestone: ms })
+    }
+  }
+
+  eligible.sort((a, b) => {
+    const pa = a.task.parallel_priority ?? Number.POSITIVE_INFINITY
+    const pb = b.task.parallel_priority ?? Number.POSITIVE_INFINITY
+    if (pa !== pb) return pa - pb
+    return a.task.id.localeCompare(b.task.id)
+  })
+
+  const sliced = eligible.slice(0, resolvedLimit)
+
+  const tasks = sliced.map(({ task, milestone }) => ({
+    id: task.id,
+    label: task.label,
+    milestone_id: milestone.id,
+    complexity: task.complexity ?? 'unknown',
+    execution_mode: task.execution_mode,
+    parallel_priority: task.parallel_priority ?? Number.POSITIVE_INFINITY,
+  }))
+
+  const groupedByTier = { small: 0, medium: 0, large: 0, architectural: 0 }
+  for (const { task } of eligible) {
+    const c = task.complexity
+    if (c === 'small' || c === 'medium' || c === 'large' || c === 'architectural') {
+      groupedByTier[c] += 1
+    }
+  }
+
+  const payload = {
+    tasks,
+    grouped_by_tier: groupedByTier,
+    total: eligible.length,
+  }
+
+  return {
+    content: [{ type: 'text' as const, text: JSON.stringify(payload, null, 2) }],
+  }
+}
+
+// ─── Milestone Auditor Handlers ─────────────────────────────────────────────
+
+/**
+ * Extract the first paragraph under the first matched section. Used for the
+ * `summary` field in the audit bundle — a sub-paragraph snapshot so the
+ * orchestrator doesn't need to re-read the full excerpt to get the gist.
+ */
+function extractFirstParagraph(text: string): string {
+  if (!text) return ''
+  // Skip the header line, find first non-empty block.
+  const lines = text.split('\n')
+  const body: string[] = []
+  let started = false
+  for (const line of lines) {
+    if (line.startsWith('#')) continue
+    if (!line.trim()) {
+      if (started) break
+      continue
+    }
+    body.push(line)
+    started = true
+    if (body.length > 6) break // cap to keep payload small
+  }
+  return body.join(' ').trim()
+}
+
+/**
+ * Extract one or more sections from a markdown document. A section id like
+ * "8" matches `## 8.` or `### 8.` (anything with that prefix). "2.3" matches
+ * `### 2.3`, `## 2.3`, `#### 2.3`, etc. A section runs until the next header
+ * of equal or shallower depth.
+ *
+ * Returns the concatenated verbatim excerpts (header + body) for every
+ * matched section in the order requested. Missing sections silently drop.
+ */
+function extractManifestoSectionsById(content: string, sectionIds: string[]): {
+  excerpts: string[]
+  matched: string[]
+} {
+  const lines = content.split('\n')
+  const excerpts: string[] = []
+  const matched: string[] = []
+
+  for (const id of sectionIds) {
+    // Build a header-matching regex. `## 8` should match `## 8.` and `## 8 Something`
+    // but NOT `## 80.` — so we anchor on either `.` or whitespace/end-of-line after
+    // the prefix. For `2.3` the suffix can be `.`, whitespace, or EOL.
+    const escapedId = id.replace(/\./g, '\\.')
+    const headerRe = new RegExp(`^(#{2,6})\\s+${escapedId}(?=[.\\s]|$)`)
+
+    let captureDepth: number | null = null
+    const captured: string[] = []
+
+    for (const line of lines) {
+      const anyHeader = line.match(/^(#{1,6})\s/)
+      if (captureDepth === null) {
+        const match = line.match(headerRe)
+        if (match) {
+          captureDepth = match[1].length
+          captured.push(line)
+        }
+        continue
+      }
+      // capturing
+      if (anyHeader) {
+        const depth = anyHeader[1].length
+        if (depth <= captureDepth) {
+          break // next section of equal or shallower depth → stop
+        }
+      }
+      captured.push(line)
+    }
+
+    if (captured.length > 0) {
+      // Trim trailing empty lines.
+      while (captured.length > 1 && !captured[captured.length - 1].trim()) {
+        captured.pop()
+      }
+      excerpts.push(captured.join('\n'))
+      matched.push(id)
+    }
+  }
+
+  return { excerpts, matched }
+}
+
+/**
+ * Heuristic classifier — deterministic phrase match to decide whether a
+ * submission-checklist item is "verifiable" (grep-able / script-able) or
+ * "manual" (requires operator / counsel / visual sign-off). Conservative:
+ * anything that doesn't match a verifiable phrase defaults to manual.
+ */
+function classifyChecklistItem(item: ChecklistItem): 'verifiable' | 'manual' {
+  const text = (item.text ?? item.label ?? '').toLowerCase()
+  if (!text) return 'manual'
+
+  const manualPhrases = [
+    'counsel-approved',
+    'counsel ',
+    'operator',
+    'visually',
+    'manually confirm',
+    'manual confirm',
+  ]
+  for (const p of manualPhrases) {
+    if (text.includes(p)) return 'manual'
+  }
+
+  const verifiablePhrases = [
+    'scope declared',
+    'scopes declared',
+    'declares exactly',
+    'prisma model has',
+    'prisma model',
+    'migration applies',
+    'migration applied',
+    'route registered',
+    'env var declared',
+    'env var ',
+    'file exists',
+    'toml contains',
+    'toml declares',
+    'package.json',
+    'not requested',
+    'wired',
+  ]
+  for (const p of verifiablePhrases) {
+    if (text.includes(p)) return 'verifiable'
+  }
+
+  return 'manual'
+}
+
+/**
+ * Compute the best-effort git diff range. Without spawning git, we pick a
+ * conservative fallback: if the prior milestone has an `actual_end` date,
+ * hint that as a ref-name heuristic (the orchestrator may or may not have
+ * tagged it). Otherwise fall back to `HEAD~50`.
+ */
+function computeDiffRange(
+  milestones: Milestone[],
+  currentMilestoneId: string
+): { base_ref: string; head_ref: string } {
+  const index = milestones.findIndex((m) => m.id === currentMilestoneId)
+  const prior = index > 0 ? milestones[index - 1] : null
+  if (prior && prior.actual_end) {
+    // Conventional release/milestone tag naming — orchestrator can fall back
+    // if the tag doesn't resolve.
+    return { base_ref: `milestone/${prior.id}`, head_ref: 'HEAD' }
+  }
+  return { base_ref: 'HEAD~50', head_ref: 'HEAD' }
+}
+
+/** Shared bundle builder — used by both start_milestone_audit and get_milestone_audit_context. */
+function buildMilestoneAuditBundle(state: TrackerState, milestone: Milestone) {
+  const lane: MilestoneLane = MILESTONE_LANE[milestone.id] ?? 'merchant_facing'
+
+  // ── Goal state (manifesto excerpts) ──
+  const sectionIds = MILESTONE_MANIFESTO_SECTIONS[milestone.id] ?? []
+  let excerptsCombined = ''
+  let matchedSections: string[] = []
+  try {
+    if (existsSync(MANIFESTO_PATH)) {
+      const manifestoContent = readFileSync(MANIFESTO_PATH, 'utf-8')
+      const { excerpts, matched } = extractManifestoSectionsById(
+        manifestoContent,
+        sectionIds
+      )
+      excerptsCombined = excerpts.join('\n\n---\n\n')
+      matchedSections = matched
+    }
+  } catch {
+    // Non-fatal: caller still gets the rest of the bundle.
+  }
+
+  const goalSummary = milestone.goal
+    ? milestone.goal
+    : extractFirstParagraph(excerptsCombined)
+
+  // ── Prior state doc ──
+  const index = state.milestones.findIndex((m) => m.id === milestone.id)
+  const priorMilestone = index > 0 ? state.milestones[index - 1] : null
+  // Match the convention: "after-m<N-1>-state.md". For m1 there is no prior.
+  const priorNumMatch = priorMilestone ? priorMilestone.id.match(/^m(\d+)_/) : null
+  const priorNum = priorNumMatch ? priorNumMatch[1] : null
+  const priorRelPath = priorNum ? `docs/state/after-m${priorNum}-state.md` : ''
+  const priorAbsPath = priorRelPath ? join(TALKSTORE_ROOT, priorRelPath) : ''
+  let priorContents: string | null = null
+  let priorExists = false
+  if (priorAbsPath && existsSync(priorAbsPath)) {
+    try {
+      priorContents = readFileSync(priorAbsPath, 'utf-8')
+      priorExists = true
+    } catch {
+      priorContents = null
+    }
+  }
+
+  // ── Per-subtask summary ──
+  const subtasksSummary = milestone.subtasks.map((t) => ({
+    id: t.id,
+    label: t.label,
+    complexity: t.complexity ?? 'unknown',
+    execution_mode: t.execution_mode,
+    audit_results: t.audit_results ?? null,
+    completed_at: t.completed_at,
+    completed_by: t.completed_by,
+  }))
+
+  // ── Linked checklist categories ──
+  const linkedCategories = state.submission_checklist.categories.filter(
+    (c) => c.linked_milestone === milestone.id
+  )
+  const linkedChecklistCategories = linkedCategories.map((cat) => {
+    const verifiable: ChecklistItem[] = []
+    const manual: ChecklistItem[] = []
+    for (const item of cat.items) {
+      if (classifyChecklistItem(item) === 'verifiable') {
+        verifiable.push(item)
+      } else {
+        manual.push(item)
+      }
+    }
+    return {
+      category: cat,
+      items_verifiable: verifiable,
+      items_manual: manual,
+    }
+  })
+
+  // ── Git diff range hint ──
+  const diffRange = computeDiffRange(state.milestones, milestone.id)
+
+  return {
+    milestone_id: milestone.id,
+    milestone_title: milestone.title,
+    milestone_lane: lane,
+    goal_state: {
+      source_path: MANIFESTO_REL_PATH,
+      sections: matchedSections,
+      // Full verbatim excerpts, joined; empty string if manifesto unreadable.
+      excerpts: excerptsCombined,
+      summary: goalSummary,
+    },
+    prior_state: {
+      exists: priorExists,
+      path: priorRelPath,
+      contents: priorContents,
+    },
+    subtasks_summary: subtasksSummary,
+    // Notes on the milestone double as the declared exit criteria in this tracker.
+    exit_criteria: milestone.notes ?? [],
+    linked_checklist_categories: linkedChecklistCategories,
+    diff_range: diffRange,
+  }
+}
+
+function handleStartMilestoneAudit(milestoneId: string) {
+  const state = readTracker()
+  const milestone = state.milestones.find((m) => m.id === milestoneId)
+  if (!milestone) {
+    return {
+      content: [{ type: 'text' as const, text: JSON.stringify({ error: `Milestone "${milestoneId}" not found.` }) }],
+      isError: true,
+    }
+  }
+
+  // Readiness validation: every subtask must be done.
+  const notDone = milestone.subtasks.filter((s) => s.status !== 'done')
+  if (notDone.length > 0) {
+    const byStatus: Record<string, number> = {}
+    for (const t of notDone) byStatus[t.status] = (byStatus[t.status] ?? 0) + 1
+    const detail = Object.entries(byStatus)
+      .map(([s, n]) => `${n} in ${s}`)
+      .join(', ')
+    return {
+      content: [{
+        type: 'text' as const,
+        text: JSON.stringify({
+          error: `Milestone not ready: ${notDone.length} tasks still in ${detail}`,
+          milestone_id: milestoneId,
+          pending_tasks: notDone.map((t) => ({ id: t.id, status: t.status, label: t.label })),
+        }),
+      }],
+      isError: true,
+    }
+  }
+
+  const bundle = buildMilestoneAuditBundle(state, milestone)
+
+  // Log start_milestone_audit.
+  state.agent_log.push({
+    id: `log_${Date.now()}_${milestoneId}_start_milestone_audit`,
+    agent_id: 'milestone-auditor',
+    action: 'start_milestone_audit',
+    target_type: 'milestone',
+    target_id: milestoneId,
+    description:
+      `Milestone audit started for "${milestone.title}" (${milestoneId}) — lane=${bundle.milestone_lane}, ` +
+      `${milestone.subtasks.length} subtasks done, ${bundle.linked_checklist_categories.length} checklist categories linked`,
+    timestamp: new Date().toISOString(),
+    tags: ['milestone-audit', 'start', 'mcp'],
+  })
+
+  touchAgent(state, 'milestone-auditor')
+  writeTracker(state)
+
+  return {
+    content: [{ type: 'text' as const, text: JSON.stringify(bundle, null, 2) }],
+  }
+}
+
+function handleGetMilestoneAuditContext(milestoneId: string) {
+  const state = readTracker()
+  const milestone = state.milestones.find((m) => m.id === milestoneId)
+  if (!milestone) {
+    return {
+      content: [{ type: 'text' as const, text: JSON.stringify({ error: `Milestone "${milestoneId}" not found.` }) }],
+      isError: true,
+    }
+  }
+
+  const bundle = buildMilestoneAuditBundle(state, milestone)
+  // Intentionally: no validation, no log, no touchAgent, no writeTracker.
+  return {
+    content: [{ type: 'text' as const, text: JSON.stringify(bundle, null, 2) }],
+  }
+}
+
+function handleSubmitMilestoneAudit(
+  milestoneId: string,
+  verdict: MilestoneVerdict,
+  findings: MilestoneFinding[],
+  checklistUpdates: Array<{ item_id: string; action: 'check' | 'uncheck'; reason: string }>,
+  reportPath: string,
+  stateDocPath: string,
+  auditedAt?: string,
+  auditorIdArg?: string
+) {
+  const state = readTracker()
+  const milestone = state.milestones.find((m) => m.id === milestoneId)
+  if (!milestone) {
+    return {
+      content: [{ type: 'text' as const, text: JSON.stringify({ error: `Milestone "${milestoneId}" not found.` }) }],
+      isError: true,
+    }
+  }
+
+  if (!['pass', 'pass_with_notes', 'fail'].includes(verdict)) {
+    return {
+      content: [{ type: 'text' as const, text: JSON.stringify({ error: `Invalid verdict "${verdict}". Must be pass|pass_with_notes|fail.` }) }],
+      isError: true,
+    }
+  }
+
+  if (!reportPath || !stateDocPath) {
+    return {
+      content: [{ type: 'text' as const, text: JSON.stringify({ error: 'report_path and state_doc_path are required.' }) }],
+      isError: true,
+    }
+  }
+
+  // Validate findings shape + severity/category enums.
+  const validSeverity = new Set<MilestoneFindingSeverity>(['critical', 'major', 'minor'])
+  const validCategory = new Set<MilestoneFindingCategory>(['coherence', 'security', 'ux', 'compliance'])
+  const normalizedFindings: MilestoneFinding[] = []
+  for (const f of findings ?? []) {
+    if (!validSeverity.has(f.severity)) {
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify({ error: `Invalid finding severity "${f.severity}".` }) }],
+        isError: true,
+      }
+    }
+    if (!validCategory.has(f.category)) {
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify({ error: `Invalid finding category "${f.category}".` }) }],
+        isError: true,
+      }
+    }
+    if (!f.description || !f.evidence) {
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify({ error: 'Each finding requires non-empty description and evidence.' }) }],
+        isError: true,
+      }
+    }
+    normalizedFindings.push({
+      severity: f.severity,
+      category: f.category,
+      description: f.description,
+      evidence: f.evidence,
+      ...(f.remediation ? { remediation: f.remediation } : {}),
+    })
+  }
+
+  // Tally severities.
+  const findingsCount = { critical: 0, major: 0, minor: 0 }
+  for (const f of normalizedFindings) findingsCount[f.severity] += 1
+
+  // Apply checklist updates.
+  const auditorId = auditorIdArg || 'milestone-auditor'
+  const now = auditedAt || new Date().toISOString()
+
+  let checked = 0
+  let unchecked = 0
+  const skipped: string[] = []
+
+  for (const upd of checklistUpdates ?? []) {
+    if (!upd.item_id || !upd.action) {
+      skipped.push(upd.item_id ?? '<missing-id>')
+      continue
+    }
+    let foundItem: ChecklistItem | null = null
+    let foundCategory: ChecklistCategory | null = null
+    for (const cat of state.submission_checklist.categories) {
+      const item = cat.items.find((i) => i.id === upd.item_id)
+      if (item) {
+        foundItem = item
+        foundCategory = cat
+        break
+      }
+    }
+    if (!foundItem || !foundCategory) {
+      skipped.push(upd.item_id)
+      continue
+    }
+    const shouldBeDone = upd.action === 'check'
+    foundItem.done = shouldBeDone
+    foundItem.completed_at = shouldBeDone ? now : null
+    foundItem.completed_by = shouldBeDone ? auditorId : null
+    if (shouldBeDone) checked += 1
+    else unchecked += 1
+
+    state.agent_log.push({
+      id: `log_${Date.now()}_${upd.item_id}_milestone_audit`,
+      agent_id: auditorId,
+      action: shouldBeDone ? 'checklist_item_completed' : 'checklist_item_unchecked',
+      target_type: 'checklist',
+      target_id: upd.item_id,
+      description:
+        `${shouldBeDone ? 'Checked' : 'Unchecked'} via milestone audit (${milestoneId}): ${upd.reason}`,
+      timestamp: now,
+      tags: ['checklist', 'milestone-audit', shouldBeDone ? 'complete' : 'revert', 'mcp'],
+    })
+  }
+
+  // Write the MilestoneAudit record onto the milestone.
+  const auditRecord: MilestoneAudit = {
+    verdict,
+    findings: normalizedFindings,
+    audited_at: now,
+    report_path: reportPath,
+    state_doc_path: stateDocPath,
+    checklist_items_updated: checked + unchecked,
+  }
+  milestone.audit = auditRecord
+
+  // Log the audit submission.
+  state.agent_log.push({
+    id: `log_${Date.now()}_${milestoneId}_submit_milestone_audit`,
+    agent_id: auditorId,
+    action: 'submit_milestone_audit',
+    target_type: 'milestone',
+    target_id: milestoneId,
+    description:
+      `Milestone audit submitted — verdict=${verdict}, findings=${normalizedFindings.length} ` +
+      `(critical=${findingsCount.critical}, major=${findingsCount.major}, minor=${findingsCount.minor}), ` +
+      `checklist_updates=${checked + unchecked} (skipped=${skipped.length})`,
+    timestamp: now,
+    tags: ['milestone-audit', 'submit', verdict, 'mcp'],
+  })
+
+  touchAgent(state, auditorId)
+  writeTracker(state)
+
+  const payload = {
+    success: true,
+    milestone_id: milestoneId,
+    verdict,
+    findings_count: findingsCount,
+    checklist_items_checked: checked,
+    checklist_items_unchecked: unchecked,
+    skipped_updates: skipped,
+    report_path: reportPath,
+    state_doc_path: stateDocPath,
+  }
+
+  return {
+    content: [{ type: 'text' as const, text: JSON.stringify(payload, null, 2) }],
   }
 }

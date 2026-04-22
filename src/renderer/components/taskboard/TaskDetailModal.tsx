@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useStore } from '../../store'
 import type { Subtask, Agent, AgentLogEntry } from '../../../main/parser'
 
@@ -7,16 +7,25 @@ type TabId = 'details' | 'history'
 const STEP_STYLE = { color: '#c4b5fd', bg: 'rgba(196,181,253,0.15)' }
 const PARALLEL_STYLE = { color: '#facc15', bg: 'rgba(250,204,21,0.15)' }
 
+// AI Commerce Index Platform — 4-lane palette. Mirrors DOMAIN_COLOR_MAP in
+// ../../domainModel.ts.
 const DOMAIN_COLORS: Record<string, string> = {
   foundation: '#585CF0',
-  storefront: '#22c55e',
-  product_ops: '#f59e0b',
-  commerce_intel: '#8286FF',
-  launch_prep: '#ef4444',
-  review_buffer: '#9B9BAA',
-  v1_2: '#8286FF',
-  v1_5: '#585CF0',
-  distribution: '#9B9BAA',
+  product_engines: '#14B8A6',
+  merchant_facing: '#5B6EE8',
+  ship_and_operate: '#F59E0B',
+  backend: '#585CF0',
+  data: '#585CF0',
+  compliance: '#F59E0B',
+  product_ops: '#14B8A6',
+  autopilot: '#14B8A6',
+  attribution: '#14B8A6',
+  scoring: '#14B8A6',
+  llm_scoring: '#14B8A6',
+  frontend: '#5B6EE8',
+  quality: '#F59E0B',
+  launch: '#F59E0B',
+  launch_gtm: '#F59E0B',
 }
 
 const EXEC_MODE_LABELS: Record<string, { label: string; icon: string; color: string }> = {
@@ -55,6 +64,7 @@ export function TaskDetailModal({
   const [blockedReason, setBlockedReason] = useState(subtask.blocked_reason || '')
   const [notes, setNotes] = useState(subtask.notes || '')
   const [executionMode, setExecutionMode] = useState<Subtask['execution_mode']>(subtask.execution_mode || 'human')
+  const [copied, setCopied] = useState(false)
 
   // Issue #2: Sync local state when subtask prop changes (e.g. external MCP agent update)
   useEffect(() => {
@@ -189,7 +199,29 @@ export function TaskDetailModal({
                 </span>
               </div>
               <h3 className="text-sm text-white font-semibold leading-snug">{subtask.label}</h3>
-              <p className="text-[10px] text-muted font-mono mt-1">{subtask.id}</p>
+              <div className="flex items-center gap-1.5 mt-1">
+                <p className="text-[10px] text-muted font-mono">{subtask.id}</p>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(subtask.id)
+                    setCopied(true)
+                    setTimeout(() => setCopied(false), 1500)
+                  }}
+                  className="text-muted hover:text-white transition-colors"
+                  title="Copy task code"
+                >
+                  {copied ? (
+                    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="3.5 8.5 6.5 11.5 12.5 4.5" />
+                    </svg>
+                  ) : (
+                    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="5.5" y="5.5" width="8" height="8" rx="1.5" />
+                      <path d="M10.5 5.5V3.5a1.5 1.5 0 0 0-1.5-1.5H3.5A1.5 1.5 0 0 0 2 3.5V9a1.5 1.5 0 0 0 1.5 1.5h2" />
+                    </svg>
+                  )}
+                </button>
+              </div>
             </div>
             <button
               onClick={onClose}

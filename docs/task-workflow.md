@@ -1,172 +1,204 @@
-# Task Workflow — Command Reference
+# Task Workflow — Milestone Command Surface
 
-## The Flow
+This document describes the current command surface used to operate Sha8al Command Center. The workflow is milestone-driven, wave-based, and tier-aware. It is not the older task-by-task lifecycle that treated single-task transitions as the primary operator flow.
 
-```
-         PREPARE               START                COMPLETE             APPROVE
-TODO ─────────────→ TODO ─────────────→ IN PROGRESS ─────────→ REVIEW ─────────→ DONE
-  (enrich prompt,     (begin work)        (agent works)         │
-   research,                                                    │ REJECT
-   ask questions)                                               ↓
-                                         IN PROGRESS ←──────── REVIEW
-                                           (agent fixes)        │
-                                               │                │ APPROVE
-                                               └── COMPLETE ──→ REVIEW ──→ DONE
-```
+## Workflow Summary
 
-Every task starts as **Todo**. You drive it through the lifecycle using these commands in your Claude Code session. The MCP server updates the tracker, and the Command Center dashboard updates in real-time.
+The operator works through milestones with a small set of verbs:
 
-Commands marked with **OPERATOR** are initiated by you. Everything else is handled by the agent automatically.
+- `next`
+- `sweep M<N> <tier>`
+- `prepare M<N> <tier>` or `prepare T<id>`
+- `build M<N> <tier>` or `build T<id>`
+- `auto M<N>`
+- `audit M<N>`
 
----
+Rare overrides:
 
-## Commands
+- `approve T<id>`
+- `audit T<id> --cross`
 
-### 1. Prepare a Task — **OPERATOR**
+Bare-word inputs such as `next`, `sweep`, `prepare`, `build`, `auto`, and `audit` are treated as the matching command.
 
-> **You say:** "Prepare task `distribution_campaigns_001`"
+## Command Table
 
-**What happens:**
-- The agent calls `get_task_context` to read the task details, milestone context, CLAUDE.md, and manifesto
-- The agent researches the codebase (reads files, searches, web research if needed)
-- The agent evaluates how much research is needed based on task complexity
-- If the task has ambiguity or design choices, the agent asks you questions
-- The agent writes enrichment back to the tracker (acceptance criteria, constraints, context files)
-- The task stays in **Todo** — no status change yet
+| Command | Purpose | When to use it | Core backend behavior |
+| --- | --- | --- | --- |
+| `next` | Show what is actionable now | First command in a session | Calls `get_next_actionable_tasks`; read-only |
+| `sweep M<N> <tier>` | Execute all unblocked tasks in one milestone tier | Usually for ready `small` work | Uses `compute_waves`, `check_file_collisions`, `claim_next_task`, `complete_task`; runs auditor for non-small work |
+| `prepare M<N> <tier>` | Enrich a milestone batch before build | Before building `medium` work | Uses `bulk_prepare`, `get_task_context`, `enrich_task`; writes builder prompts |
+| `prepare T<id>` | Enrich one larger task | Before building a `large` or `architectural` task | Same prepare machinery, scoped to one task |
+| `build M<N> <tier>` | Build prepared milestone work | After batch prepare is done | Uses `get_task_context`, `start_task`, `complete_task`, then audit submission |
+| `build T<id>` | Build one prepared task | When one prepared task is the right unit of work | Same build path, scoped to one task |
+| `auto M<N>` | Run the milestone autonomously across waves | When you want command chaining without retyping | Composes `next`, `sweep`, and `build` semantics until a stop condition |
+| `audit M<N>` | Run the milestone-level audit | After milestone execution is complete | Uses `start_milestone_audit`, specialist milestone auditors, `submit_milestone_audit` |
+| `approve T<id>` | Manual `review → done` override | Rare explicit approval override | Uses `approve_task` directly |
+| `audit T<id> --cross` | Cross-model second-opinion audit | High-risk task verification | Runs task auditor with `cross_model=true` |
 
-**MCP tools used:**
-- `get_task_context(task_id)` — read full context
-- `update_task(task_id, ...)` — write notes
+## Read-Only Status: `next`
 
-**Board:** stays in **Todo** (task is enriched, not started)
+Supported forms:
 
----
+- `next`
+- `next <tier>`
+- `next M<N>`
 
-### 2. Start a Task — **OPERATOR**
+What it does:
 
-> **You say:** "Start task `distribution_campaigns_001`"
+- shows unblocked tasks only
+- groups work by complexity tier
+- includes task id, label, milestone, complexity, execution mode, and wave
+- does not start, prepare, or complete anything
 
-**What happens:**
-- The agent calls `get_task_context` to get the enriched task (with criteria from the prepare step)
-- The agent calls `start_task` → task moves to **In Progress** on the board
-- The agent does the actual implementation — writes code, runs tests, etc.
-- When finished, the agent calls `complete_task` with a summary → task moves to **Review** automatically
+Use `next` to decide whether the milestone needs `sweep`, `prepare`, `build`, or `auto`.
 
-**MCP tools used:**
-- `get_task_context(task_id)` — read enriched context
-- `start_task(task_id)` — move to In Progress
-- `log_action(task_id, action, description)` — log significant events during work
-- `complete_task(task_id, summary)` — automatically submits for review when done
+## Sweep: `sweep M<N> <tier>`
 
-**Board:** Todo → **In Progress** → **Review** (automatic when agent finishes)
+Use `sweep` to drain one milestone tier wave by wave.
 
----
+What happens:
 
-### 3. Give Feedback (Reject) — **OPERATOR**
+1. The command reads the milestone wave map with `compute_waves`.
+2. Same-wave tasks are checked with `check_file_collisions`.
+3. Collision-safe tasks can run in parallel; colliding or dependency-linked tasks serialize.
+4. Each task is claimed atomically with `claim_next_task`.
+5. The work is executed.
+6. The task is moved to `review` through `complete_task`.
+7. For non-small tasks, the task auditor runs next.
 
-> **You say:** "The campaign pixels need to respect cookie consent preferences"
+Important behavior:
 
-The task is in the **Review** column. You've looked at the code and it needs changes.
+- `small` tasks skip the auditor; their acceptance commands are the audit.
+- `sweep` stops when no more tasks of the requested tier are unblocked.
+- A common stop condition is that the next actionable work is a different tier and now needs `prepare` or `build`.
 
-**What happens:**
-- The agent calls `reject_task` with your feedback → task moves back to **In Progress** automatically
-- Your feedback is logged in the task's revision history
-- The agent addresses your feedback
-- When finished, the agent calls `complete_task` again → task moves back to **Review** automatically
-- This cycle repeats until you're satisfied
+## Prepare: `prepare M<N> <tier>` / `prepare T<id>`
 
-**MCP tools used:**
-- `reject_task(task_id, feedback)` — move back to In Progress with your feedback
-- `complete_task(task_id, summary)` — automatically resubmits for review when fixes are done
+Use `prepare` to create implementation context before code changes begin.
 
-**Board:** Review → **In Progress** → **Review** (repeats until approved)
+What happens:
 
----
+1. The command gathers the target task or milestone batch.
+2. Explorer and Researcher run in parallel.
+3. Explorer maps the local code patterns and relevant files.
+4. Researcher checks external references, APIs, schemas, and constraints.
+5. A canonical builder prompt is written to `docs/prompts/M<N>/<task_id>.md`.
+6. The task is enriched with:
+   - `builder_prompt`
+   - `context_files`
+   - `reference_docs`
+   - `constraints`
+   - refined acceptance criteria
 
-### 4. Complete a Task (Approve) — **OPERATOR**
+Important behavior:
 
-> **You say:** "Complete task `distribution_campaigns_001`"
+- `prepare` does not implement code.
+- Batch prepare is rate-limited and parallelized.
+- `prepare T<id>` is the normal path for deeper `large` or `architectural` work.
 
-The task is in **Review** and the work looks good.
+## Build: `build M<N> <tier>` / `build T<id>`
 
-**What happens:**
-- The agent calls `approve_task` → task moves to **Done**
-- `completed_by` is set to "Luqman", `completed_at` is timestamped
-- If this was the last task in the milestone, the milestone's `actual_end` is auto-stamped
+Use `build` to execute prepared work.
 
-**MCP tools used:**
-- `approve_task(task_id)` — move to Done
+What happens:
 
-**Board:** Review → **Done**
+1. The command loads enriched task context.
+2. It uses `builder_prompt` when present.
+3. It calls `start_task`.
+4. It implements the work.
+5. It runs the required build and validation commands.
+6. It calls `complete_task` to move the task to `review`.
+7. It runs the task auditor for non-small work.
 
----
+Important behavior:
 
-### 5. Block / Unblock a Task
+- `build` must stop on build failure, validation failure, or audit failure.
+- `build` does not use manual approval as the normal path.
+- Auto-approval is determined by the task’s lane and audit outcome.
 
-If the agent hits a blocker it can't resolve:
+## Autonomous Milestone Run: `auto M<N>`
 
-**MCP tools used:**
-- `block_task(task_id, reason)` — move to Blocked
-- `unblock_task(task_id, resolution)` — move back to Todo or In Progress
+Use `auto` when you want the system to keep pushing the milestone until it naturally has to stop.
 
-**Board:** Any → **Blocked** → Todo/In Progress
+What happens:
 
----
+- reads the current actionable set for the milestone
+- executes ready `small` work through sweep semantics
+- executes prepared medium and larger work through build semantics
+- moves wave by wave until a stop condition is reached
 
-## Summary: Your 4 Commands
+Natural stop conditions:
 
-| # | You say | What happens | Board change |
-|---|---------|-------------|-------------|
-| 1 | **"Prepare task `X`"** | Agent researches, enriches, asks questions | Stays in **Todo** |
-| 2 | **"Start task `X`"** | Agent implements, then auto-submits for review | Todo → **In Progress** → **Review** |
-| 3 | **"[your feedback]"** | Agent fixes, then auto-resubmits for review | Review → **In Progress** → **Review** |
-| 4 | **"Complete task `X`"** | Task is approved and done | Review → **Done** |
+- no unblocked tasks remain
+- the next task is `pair` or `human`
+- a medium or larger task is unblocked but not prepared
+- a task fails build or audit
+- a task lands in `review` without auto-approval because operator eyeballing is required
+- an optional task cap is reached
 
----
+`auto` is best for backend-heavy milestones where successful audits can auto-approve work and unblock the next wave.
 
-## Full Tool Reference
+## Milestone Audit: `audit M<N>`
 
-### Read Tools (no state changes)
+Use milestone audit after execution is complete.
 
-| Command | What it does |
-|---------|-------------|
-| `get_task_context(task_id)` | Full context: task details, criteria, constraints, milestone, dependencies, CLAUDE.md, manifesto |
-| `get_project_status()` | Overall progress, schedule, current week, blocked count |
-| `get_milestone_overview(milestone_id)` | Milestone details with all task statuses |
-| `list_tasks(milestone_id?, status?, domain?)` | List tasks with optional filters |
-| `get_checklist_status()` | Submission checklist progress |
-| `get_task_history(task_id)` | Agent log entries for a task |
-| `list_agents()` | All registered agents with status |
-| `get_activity_feed(agent_id?, limit?)` | Recent activity log |
+What happens:
 
-### Write Tools (update tracker)
+1. The milestone audit bundle is started with readiness validation.
+2. Four specialist auditors run in parallel:
+   - coherence
+   - security
+   - UX
+   - compliance
+3. Their findings are synthesized into a milestone verdict.
+4. The audit report and after-state snapshot are written.
+5. The audit result is persisted back through milestone audit submission.
 
-| Command | Status change | Who calls it |
-|---------|--------------|-------------|
-| `start_task(task_id)` | → **in_progress** | Agent (when you say "start task") |
-| `complete_task(task_id, summary)` | → **review** | Agent (automatic when work is done) |
-| `approve_task(task_id, feedback?)` | → **done** | Agent (when you say "complete task") |
-| `reject_task(task_id, feedback)` | → **in_progress** | Agent (when you give feedback) |
-| `block_task(task_id, reason)` | → **blocked** | Agent |
-| `unblock_task(task_id, resolution?)` | → **todo** or **in_progress** | Agent |
-| `update_task(task_id, ...)` | No status change | Either |
-| `log_action(task_id, action, description)` | No status change | Agent |
-| `toggle_checklist_item(item_id, done)` | No status change | Either |
-| `add_milestone_note(milestone_id, note)` | No status change | Either |
-| `set_milestone_dates(milestone_id, ...)` | No status change | Either |
-| `update_drift(milestone_id, drift_days)` | No status change | Either |
-| `register_agent(agent_id, name, type, permissions)` | No status change | Agent |
+Important behavior:
 
-### CLI Equivalents
+- milestone audit is not the same as the per-task auditor
+- milestone audit failures warn; they do not hard-block downstream work automatically
 
-Every MCP tool is also available via the `talkstore` CLI:
+## Auditor And Auto-Approval
 
-```bash
-talkstore get-task-context distribution_campaigns_001
-talkstore start-task distribution_campaigns_001
-talkstore complete-task distribution_campaigns_001 "Implemented UTM tracking and pixel installation"
-talkstore approve-task distribution_campaigns_001
-talkstore reject-task distribution_campaigns_001 "Pixels need cookie consent check"
-talkstore block-task distribution_campaigns_001 "Waiting on analytics provider API key"
-talkstore unblock-task distribution_campaigns_001 "Got the API key"
-```
+Every non-small task runs the task auditor after build.
+
+The task auditor uses a 12-point checklist covering:
+
+- build, typecheck, lint, and acceptance commands
+- failure-mode and diff-scope checks
+- secrets and dependency safety
+- injection safety
+- merchant-data scoping
+- consent and logging rules
+- tests and reversible migrations
+
+Lane-based outcome:
+
+- `foundation` and `product_engines`: clean audit can auto-approve the task
+- `merchant_facing` and `ship_and_operate`: task stays in `review` for operator eyeballing
+- any failed audit: task stays in `review` with the audit report attached
+
+## How To Choose The Next Command
+
+Use this decision guide:
+
+| Situation | Next command |
+| --- | --- |
+| You need to know what is unblocked | `next` |
+| Ready `small` tasks exist in the milestone | `sweep M<N> small` |
+| `medium` work is next and unprepared | `prepare M<N> medium` |
+| One `large` or `architectural` task is next | `prepare T<id>` |
+| Prepared work is waiting to be implemented | `build ...` |
+| You want the milestone to keep draining automatically | `auto M<N>` |
+| The milestone is complete and needs broader review | `audit M<N>` |
+
+## Manual Overrides
+
+### `approve T<id>`
+
+Manual `review → done` override for a single task. Use rarely.
+
+### `audit T<id> --cross`
+
+Cross-model second-opinion audit for a single task. Use for high-risk changes or when you want an extra verification pass.

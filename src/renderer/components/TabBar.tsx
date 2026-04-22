@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { useStore } from '../store'
 
-type TabId = 'swim-lane' | 'task-board' | 'agent-hub' | 'calendar' | 'birds-eye' | 'qa'
+type TabId = 'swim-lane' | 'task-board' | 'agent-hub' | 'calendar' | 'qa'
 
 const TABS: { id: TabId; icon: string; label: string }[] = [
   { id: 'swim-lane', icon: '⬡', label: 'Swim Lane' },
@@ -9,7 +9,6 @@ const TABS: { id: TabId; icon: string; label: string }[] = [
   { id: 'qa', icon: '◎', label: 'QA' },
   { id: 'agent-hub', icon: '⚡', label: 'Agent Hub' },
   { id: 'calendar', icon: '▦', label: 'Calendar' },
-  { id: 'birds-eye', icon: '◉', label: "Bird's Eye" },
 ]
 
 export function TabBar() {

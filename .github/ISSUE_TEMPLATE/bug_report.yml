@@ -1,0 +1,82 @@
+name: Bug report
+description: Report a defect in the app, MCP server, scripts, or packaging flow.
+title: "[Bug]: "
+labels:
+  - bug
+  - triage
+body:
+  - type: input
+    id: platform_version
+    attributes:
+      label: Platform version
+      description: Provide the release tag, package version, or commit SHA you tested.
+      placeholder: e.g. 1.0.0 or abc1234
+    validations:
+      required: true
+  - type: dropdown
+    id: target_profile
+    attributes:
+      label: Target profile
+      description: Which profile were you actively using when the bug occurred?
+      options:
+        - generic
+        - talkstore
+        - aci
+        - other / mixed
+    validations:
+      required: true
+  - type: dropdown
+    id: talkstore_compatibility
+    attributes:
+      label: Is TalkStore compatibility involved?
+      options:
+        - "No"
+        - "Yes"
+        - Not sure
+    validations:
+      required: true
+  - type: checkboxes
+    id: affected_surface
+    attributes:
+      label: Affected surface
+      options:
+        - label: Electron app
+        - label: MCP server or CLI
+        - label: Scripts or bootstrap
+        - label: Docs or examples
+        - label: Packaging or release flow
+  - type: textarea
+    id: environment
+    attributes:
+      label: OS and runtime environment
+      description: Include OS version, Node version, and any other relevant runtime details.
+      placeholder: macOS 15, Node 22.x, Electron dev mode
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Set ...
+        2. Run ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected_behavior
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual_behavior
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs, screenshots, or stack traces
+      description: Paste anything that helps triage the issue.

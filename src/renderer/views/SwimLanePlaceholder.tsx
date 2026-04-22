@@ -10,6 +10,9 @@ const DOMAIN_COLORS: Record<string, string> = {
   v1_2: '#8286FF',
   v1_5: '#585CF0',
   distribution: '#9B9BAA',
+  product_ops_tae: '#14B8A6',
+  commerce_billing: '#f59e0b',
+  polish_submit: '#ef4444',
 }
 
 export function SwimLanePlaceholder() {

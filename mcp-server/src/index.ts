@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Talkstore Command Center — MCP Server
+ * Sha8al Command Center — MCP Server
  *
  * Provides live project context and tracker updates to any Claude Code session.
  * Runs as a stdio MCP server that Claude Code spawns automatically.
@@ -53,7 +53,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 async function main() {
   const transport = new StdioServerTransport()
   await server.connect(transport)
-  console.error('Talkstore MCP server running on stdio')
+  console.error('Sha8al Command Center MCP server running on stdio')
 }
 
 main().catch((err) => {

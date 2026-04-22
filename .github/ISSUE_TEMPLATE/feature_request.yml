@@ -1,0 +1,68 @@
+name: Feature request
+description: Propose an enhancement to the platform, compatibility model, or packaging flow.
+title: "[Feature]: "
+labels:
+  - enhancement
+  - triage
+body:
+  - type: input
+    id: platform_version
+    attributes:
+      label: Current platform version
+      description: Provide the release tag, package version, or commit SHA that informed this request.
+      placeholder: e.g. 1.0.0 or abc1234
+    validations:
+      required: true
+  - type: dropdown
+    id: target_profile
+    attributes:
+      label: Target profile
+      options:
+        - generic
+        - talkstore
+        - aci
+        - other / mixed
+    validations:
+      required: true
+  - type: dropdown
+    id: talkstore_compatibility
+    attributes:
+      label: Does this request involve TalkStore compatibility?
+      options:
+        - "No"
+        - "Yes"
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: OS and runtime environment
+      description: Describe the environment where this feature gap shows up.
+      placeholder: macOS 15, Node 22.x, MCP CLI usage in Claude Code
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Current behavior or limitation
+      description: What is missing or painful today?
+    validations:
+      required: true
+  - type: textarea
+    id: expected_behavior
+    attributes:
+      label: Expected behavior
+      description: Describe the outcome you want.
+    validations:
+      required: true
+  - type: textarea
+    id: proposed_solution
+    attributes:
+      label: Proposed solution
+      description: Outline a concrete change, if you have one.
+  - type: textarea
+    id: migration
+    attributes:
+      label: Migration or rollback considerations
+      description: Call out any compatibility or release concerns.

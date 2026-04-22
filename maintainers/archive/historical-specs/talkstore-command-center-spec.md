@@ -1,4 +1,6 @@
-# Talkstore Command Center — Build Spec v1.0
+# Sha8al Command Center Historical Spec — TalkStore Compatibility Build Spec v1.0
+
+> Historical note: this document describes the original TalkStore-first build shape. The public platform identity is now Sha8al Command Center (`sha8al-command-center`), and TalkStore is a compatibility profile.
 
 **What this is:** The complete build specification for an Electron desktop app that serves as the project management command center for the Talkstore product. This document is the prompt. An agent reading this file should be able to build the app from scratch.
 
@@ -583,6 +585,6 @@ These are documented for context only. Do not build them now.
 
 ---
 
-*This document is the build spec for the Talkstore Command Center. The source data lives in the roadmap and manifesto markdown files. The output is an Electron app that every agent on the project can read, write, and orient from.*
+*This document is the original build spec for the TalkStore compatibility version of Sha8al Command Center. The source data lives in the roadmap and manifesto markdown files. The output is an Electron app that every agent on the project can read, write, and orient from.*
 
 **Build it. Ship it. Track everything.**

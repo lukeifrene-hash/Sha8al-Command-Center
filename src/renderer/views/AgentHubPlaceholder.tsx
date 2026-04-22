@@ -271,12 +271,18 @@ function AgentCard({ agent }: { agent: Agent }) {
           )}
         </div>
       </div>
-      <div className="flex gap-1 flex-shrink-0">
-        {agent.permissions.map((p) => (
-          <span key={p} className="text-[9px] px-1.5 py-0.5 rounded bg-accent/10 text-accent-light font-semibold tracking-wider">
-            {p.toUpperCase()}
-          </span>
-        ))}
+      <div className="flex items-center gap-2 flex-shrink-0">
+        <span
+          className="text-[9px] px-2 py-0.5 rounded font-semibold tracking-wider"
+          style={{ color: agent.color, backgroundColor: agent.color + '1a' }}
+          title={agent.permissions?.length ? `Permissions: ${agent.permissions.join(', ')}` : undefined}
+        >
+          {agent.type === 'human'
+            ? 'OPERATOR'
+            : agent.type === 'orchestrator'
+              ? 'ORCHESTRATOR'
+              : 'SUB-AGENT'}
+        </span>
       </div>
     </div>
   )
@@ -287,6 +293,22 @@ function AgentCard({ agent }: { agent: Agent }) {
 function SharedStateFileInfo({ tracker, synced, total, totalItems }: {
   tracker: TrackerState; synced: boolean; total: number; totalItems: number
 }) {
+  const [trackerPath, setTrackerPath] = useState<string>('Resolving...')
+
+  useEffect(() => {
+    let cancelled = false
+    window.api.tracker.getPath()
+      .then((path) => {
+        if (!cancelled) setTrackerPath(path)
+      })
+      .catch(() => {
+        if (!cancelled) setTrackerPath('Unavailable')
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   // Simple schema integrity check: verify required fields exist
   const schemaValid = !!(
     tracker.project?.name &&
@@ -301,7 +323,7 @@ function SharedStateFileInfo({ tracker, synced, total, totalItems }: {
     <div className="rounded-lg border border-border p-4">
       <h3 className="text-xs font-bold tracking-wider text-muted mb-3">SHARED STATE FILE</h3>
       <div className="space-y-1.5 text-xs">
-        <Row label="Path" value="talkstore-tracker.json" mono />
+        <Row label="Path" value={trackerPath} mono />
         <Row label="Watcher" value={synced ? 'Active' : 'Inactive'} green={synced} />
         <Row label="Milestones" value={String(tracker.milestones.length)} />
         <Row label="Subtasks" value={String(total)} />

@@ -1,7 +1,7 @@
-# Talkstore Command Center — Project Context
+# Sha8al Command Center — Project Context
 
 ## What This Is
-An Electron desktop app that visualizes and manages the Talkstore build timeline. It reads a `talkstore-tracker.json` state file from the main Talkstore project and displays it as a swimlane view, task board, and agent hub.
+An Electron desktop app that visualizes and manages a tracker-driven build timeline. It supports TalkStore as a compatibility profile and can read a `talkstore-tracker.json` state file from the main TalkStore project, displaying it as a swimlane view, task board, and agent hub.
 
 ## Stack
 - **Electron** + **electron-vite** (build tool)
@@ -62,7 +62,7 @@ updateTracker((draft) => {
 The store auto-writes back to disk with 500ms debounce.
 
 ### Cross-Project References
-This app reads from the main Talkstore project at `TALKSTORE_ROOT` (configured in `.env`):
+This app can read from the main TalkStore project at `TALKSTORE_ROOT` (configured in `.env`) when the compatibility profile is in use:
 - `docs/tasks.md` — Canonical task list (parsed into milestones)
 - `docs/submission-checklist.md` — Compliance checklist (parsed separately)
 - `docs/manifesto.md` — Product vision (loaded into task context by MCP server)

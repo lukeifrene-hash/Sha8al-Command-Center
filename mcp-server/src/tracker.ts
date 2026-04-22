@@ -4,7 +4,7 @@
  */
 
 import { readFileSync, writeFileSync, existsSync } from 'fs'
-import { join, dirname } from 'path'
+import { basename, join, dirname, isAbsolute, resolve } from 'path'
 import { fileURLToPath } from 'url'
 
 // ─── Types (mirrored from parser.ts) ────────────────────────────────────────
@@ -32,6 +32,70 @@ export interface Subtask {
   last_run_id: string | null
   pipeline: Pipeline | null
   builder_prompt: string | null
+  // ── Three-phase workflow fields (sweep / prepare / build) ──
+  // Optional: populated by Track A synthesis. Read by claim_next_task,
+  // compute_waves, bulk_prepare, and check_file_collisions.
+  parallel_priority?: number
+  complexity?: 'small' | 'medium' | 'large' | 'architectural'
+  prepared?: boolean
+  // ── Auditor workflow fields ──
+  // audit_results is written by submit_audit. auto_approve_eligible is derived
+  // lazily from the milestone lane (not persisted) — surfaced on request_audit.
+  audit_results?: AuditResult
+  auto_approve_eligible?: boolean
+}
+
+// ─── Auditor Workflow Types ─────────────────────────────────────────────────
+
+export type MilestoneLane =
+  | 'foundation'
+  | 'product_engines'
+  | 'merchant_facing'
+  | 'ship_and_operate'
+
+export interface AuditChecklistItem {
+  id: string
+  category: 'structural' | 'security' | 'compliance' | 'correctness'
+  label: string
+  status: 'pending' | 'pass' | 'fail' | 'n/a'
+  detail?: string
+}
+
+export interface AuditResult {
+  auditor_id: string
+  audited_at: string
+  pass: boolean
+  items: AuditChecklistItem[]
+  summary?: string
+}
+
+// ─── Milestone Audit (Auditor subsystem) ─────────────────────────────────────
+// Per-milestone audit record, written by submit_milestone_audit.
+// Informational only — does NOT gate downstream work.
+
+export type MilestoneVerdict = 'pass' | 'pass_with_notes' | 'fail'
+export type MilestoneFindingSeverity = 'critical' | 'major' | 'minor'
+export type MilestoneFindingCategory =
+  | 'coherence'
+  | 'security'
+  | 'ux'
+  | 'compliance'
+
+export interface MilestoneFinding {
+  severity: MilestoneFindingSeverity
+  category: MilestoneFindingCategory
+  description: string
+  evidence: string
+  remediation?: string
+}
+
+export interface MilestoneAudit {
+  verdict: MilestoneVerdict
+  findings: MilestoneFinding[]
+  audited_at: string
+  report_path: string
+  state_doc_path: string
+  checklist_items_updated: number
 }
 
 export interface Milestone {
@@ -50,15 +114,32 @@ export interface Milestone {
   subtasks: Subtask[]
   dependencies: string[]
   notes: string[]
+  /**
+   * Milestone-level goal statement (present in talkstore-tracker.json for
+   * v2 milestones). Optional since older milestones may not have it.
+   */
+  goal?: string
+  /**
+   * Populated by submit_milestone_audit. Informational only — audit does
+   * not gate downstream tasks (per operator decision: audits are advisory).
+   */
+  audit?: MilestoneAudit
 }
 
 export interface ChecklistItem {
   id: string
   label: string
+  /**
+   * The live tracker JSON stores item prose under `text`, not `label`.
+   * Keep this optional so the milestone-audit classifier can read it
+   * without tripping the compiler. Pre-existing drift — not fixing here.
+   */
+  text?: string
   done: boolean
   linked_milestone: string | null
   completed_at: string | null
   completed_by: string | null
+  notes?: string | null
 }
 
 export interface ChecklistCategory {
@@ -67,6 +148,12 @@ export interface ChecklistCategory {
   risk_level: 'normal' | 'critical'
   target_week: number
   items: ChecklistItem[]
+  /**
+   * The live tracker JSON ties each checklist category to a milestone via
+   * `linked_milestone`. Used by milestone-audit tools to gather the
+   * category slice relevant to a given milestone.
+   */
+  linked_milestone?: string | null
 }
 
 export interface AgentLogEntry {
@@ -180,17 +267,47 @@ export interface TrackerState {
 
 // ─── Path Resolution ────────────────────────────────────────────────────────
 
-function resolveProjectRoot(): string {
-  // 1. Environment variable
-  if (process.env.TALKSTORE_PROJECT_ROOT) {
-    return process.env.TALKSTORE_PROJECT_ROOT
-  }
+const __dirname_resolved = dirname(fileURLToPath(import.meta.url))
+const COMMAND_CENTER_ROOT = resolve(__dirname_resolved, '../..')
+const PROFILES_ROOT = join(COMMAND_CENTER_ROOT, 'profiles')
+const SIBLING_TALKSTORE_ROOT = resolve(COMMAND_CENTER_ROOT, '..', 'talkstore')
 
-  // 2. .env file in command-center root (two levels up from mcp-server/dist/)
-  const __dirname_resolved = dirname(fileURLToPath(import.meta.url))
+type ConsumerProfileId = 'generic' | 'talkstore'
+
+interface ConsumerProfileDocEntry {
+  default_path: string
+  compatibility_paths?: string[]
+  required: boolean
+}
+
+interface ConsumerProfileManifest {
+  id: ConsumerProfileId
+  display_name: string
+  kind: 'public' | 'compatibility' | 'internal'
+  resolution_priority: number
+  project_root: {
+    env_keys: string[]
+    compatibility_inference?: Array<{ type: string; key?: string; value?: string }>
+  }
+  tracker: {
+    primary_filename: string
+    compatibility_filenames: string[]
+    default_creation_filename: string
+  }
+  docs: {
+    tasks: ConsumerProfileDocEntry
+    checklist: ConsumerProfileDocEntry
+    manifesto: ConsumerProfileDocEntry
+    roadmap_optional?: ConsumerProfileDocEntry
+  }
+}
+
+function parseEnvFile(): Record<string, string> {
+  const values: Record<string, string> = {}
   const envPaths = [
-    join(__dirname_resolved, '../../.env'),       // from mcp-server/dist/
-    join(__dirname_resolved, '../../../.env'),     // fallback
+    join(COMMAND_CENTER_ROOT, '.env'),
+    join(__dirname_resolved, '../../.env'),
+    join(__dirname_resolved, '../../../.env'),
   ]
 
   for (const envPath of envPaths) {
@@ -199,21 +316,165 @@ function resolveProjectRoot(): string {
       for (const line of content.split('\n')) {
         const trimmed = line.trim()
         if (trimmed.startsWith('#') || !trimmed) continue
-        const match = trimmed.match(/^TALKSTORE_PROJECT_ROOT\s*=\s*(.+)$/)
-        if (match) return match[1].trim()
+        const match = trimmed.match(/^([A-Z0-9_]+)\s*=\s*(.+)$/)
+        if (match) values[match[1]] = match[2].trim()
       }
+      break
     } catch {
       // Try next path
     }
   }
 
+  return values
+}
+
+function readSetting(keys: string[]): string | null {
+  const envFileValues = parseEnvFile()
+  for (const key of keys) {
+    const fromProcess = process.env[key]
+    if (fromProcess?.trim()) return fromProcess.trim()
+    const fromFile = envFileValues[key]
+    if (fromFile?.trim()) return fromFile.trim()
+  }
+  return null
+}
+
+function resolveMaybeRelative(basePath: string, value: string): string {
+  return isAbsolute(value) ? value : resolve(basePath, value)
+}
+
+function loadProfileManifest(profileId: ConsumerProfileId): ConsumerProfileManifest {
+  const manifestPath = join(PROFILES_ROOT, profileId, 'manifest.json')
+  if (!existsSync(manifestPath)) {
+    throw new Error(`Profile manifest not found for "${profileId}" at ${manifestPath}.`)
+  }
+
+  return JSON.parse(readFileSync(manifestPath, 'utf-8')) as ConsumerProfileManifest
+}
+
+function resolveProfileId(): ConsumerProfileId {
+  const explicitProfile = readSetting(['COMMAND_CENTER_PROFILE'])
+  if (explicitProfile) {
+    if (explicitProfile === 'generic' || explicitProfile === 'talkstore') {
+      return explicitProfile
+    }
+
+    throw new Error(
+      `Unknown consumer profile "${explicitProfile}". Expected "generic" or "talkstore".`
+    )
+  }
+
+  const legacyRoot = readSetting(['TALKSTORE_PROJECT_ROOT'])
+  if (legacyRoot) return 'talkstore'
+
+  const configuredTracker = readSetting(['COMMAND_CENTER_TRACKER_FILE', 'TRACKER_FILE'])
+  if (configuredTracker && basename(configuredTracker) === 'talkstore-tracker.json') {
+    return 'talkstore'
+  }
+
+  const configuredRoot = readSetting(['COMMAND_CENTER_PROJECT_ROOT', 'PROJECT_ROOT'])
+  if (configuredRoot) {
+    const resolvedRoot = resolve(configuredRoot)
+    if (
+      resolvedRoot === SIBLING_TALKSTORE_ROOT ||
+      existsSync(join(resolvedRoot, 'talkstore-tracker.json'))
+    ) {
+      return 'talkstore'
+    }
+    return 'generic'
+  }
+
+  if (existsSync(SIBLING_TALKSTORE_ROOT)) {
+    return 'talkstore'
+  }
+
+  return 'generic'
+}
+
+function resolveProjectRoot(profile: ConsumerProfileManifest): string {
+  const configured = readSetting(profile.project_root.env_keys)
+  if (configured) {
+    return resolve(configured)
+  }
+
+  if (profile.id === 'talkstore' && existsSync(SIBLING_TALKSTORE_ROOT)) {
+    return SIBLING_TALKSTORE_ROOT
+  }
+
   throw new Error(
-    'TALKSTORE_PROJECT_ROOT is not set. Set the env var or create a .env file in the command-center root.'
+    'Project root is not set. Configure COMMAND_CENTER_PROJECT_ROOT ' +
+    '(or TALKSTORE_PROJECT_ROOT for legacy compatibility).'
   )
 }
 
-export const TALKSTORE_ROOT = resolveProjectRoot()
-export const TRACKER_PATH = join(TALKSTORE_ROOT, 'talkstore-tracker.json')
+function resolveTrackerFile(projectRoot: string, profile: ConsumerProfileManifest): string {
+  const configured = readSetting(['COMMAND_CENTER_TRACKER_FILE', 'TRACKER_FILE'])
+  if (configured) return configured
+
+  const candidateFiles = [profile.tracker.primary_filename, ...profile.tracker.compatibility_filenames]
+  for (const candidate of candidateFiles) {
+    if (existsSync(join(projectRoot, candidate))) return candidate
+  }
+
+  return profile.tracker.default_creation_filename
+}
+
+function resolveDocPath(projectRoot: string, envKeys: string[], candidates: string[]): string {
+  const configured = readSetting(envKeys)
+  if (configured) return resolveMaybeRelative(projectRoot, configured)
+
+  for (const candidate of candidates) {
+    const absolute = resolveMaybeRelative(projectRoot, candidate)
+    if (existsSync(absolute)) return absolute
+  }
+
+  return resolveMaybeRelative(projectRoot, candidates[0])
+}
+
+function resolveTasksPath(projectRoot: string, profile: ConsumerProfileManifest): string {
+  return resolveDocPath(projectRoot, ['COMMAND_CENTER_TASKS_DOC', 'TASKS_DOC'], [
+    profile.docs.tasks.default_path,
+  ])
+}
+
+function resolveOptionalDocPath(
+  projectRoot: string,
+  envKeys: string[],
+  defaultPath: string
+): string {
+  return resolveDocPath(projectRoot, envKeys, [defaultPath])
+}
+
+export const PROFILE_ID = resolveProfileId()
+export const PROFILE = loadProfileManifest(PROFILE_ID)
+export const PROJECT_ROOT = resolveProjectRoot(PROFILE)
+export const TALKSTORE_ROOT = PROJECT_ROOT
+export const TRACKER_FILE = resolveTrackerFile(PROJECT_ROOT, PROFILE)
+export const TRACKER_PATH = join(PROJECT_ROOT, TRACKER_FILE)
+
+const TASKS_PATH = resolveTasksPath(PROJECT_ROOT, PROFILE)
+
+export const DOCS_PATHS = {
+  tasks: TASKS_PATH,
+  roadmap: TASKS_PATH,
+  checklist: resolveDocPath(
+    PROJECT_ROOT,
+    ['COMMAND_CENTER_CHECKLIST_DOC', 'CHECKLIST_DOC'],
+    [PROFILE.docs.checklist.default_path]
+  ),
+  manifesto: resolveDocPath(
+    PROJECT_ROOT,
+    ['COMMAND_CENTER_MANIFESTO_DOC', 'MANIFESTO_DOC'],
+    [PROFILE.docs.manifesto.default_path]
+  ),
+  roadmap_optional: PROFILE.docs.roadmap_optional
+    ? resolveOptionalDocPath(
+        PROJECT_ROOT,
+        ['COMMAND_CENTER_ROADMAP_DOC', 'ROADMAP_DOC'],
+        PROFILE.docs.roadmap_optional.default_path
+      )
+    : null,
+}
 
 // ─── Read / Write ───────────────────────────────────────────────────────────
 
@@ -276,6 +537,28 @@ export function autoUnblockDependents(
   completedMilestoneId: string
 ): string[] {
   const unblocked: string[] = []
+  const depsSatisfied = (task: Subtask): boolean => {
+    const deps = task.depends_on || []
+    if (deps.length === 0) return true
+
+    for (const depId of deps) {
+      const depTask = findTask(state, depId)
+      if (depTask) {
+        if (!depTask.subtask.done) return false
+        continue
+      }
+
+      const depMilestone = state.milestones.find((m) => m.id === depId)
+      if (depMilestone) {
+        if (!depMilestone.subtasks.every((subtask) => subtask.done)) return false
+        continue
+      }
+
+      return false
+    }
+
+    return true
+  }
 
   // 1. Subtask-level: unblock tasks whose depends_on includes the completed task
   for (const milestone of state.milestones) {
@@ -283,13 +566,12 @@ export function autoUnblockDependents(
       if (task.status !== 'blocked') continue
       if (!task.depends_on || !task.depends_on.includes(completedTaskId)) continue
 
-      // Check if ALL dependencies in depends_on are now done
-      const allDepsDone = task.depends_on.every((depId) => {
-        const dep = findTask(state, depId)
-        return dep && dep.subtask.done
-      })
-
-      if (allDepsDone) {
+      // Check if ALL dependencies in depends_on are now done.
+      // Must handle BOTH subtask IDs and milestone IDs — tasks often list an
+      // upstream milestone (e.g. "m1_purge_and_foundation_reset") alongside
+      // specific subtasks. Using only findTask() would miss the milestone case
+      // and leave dependents stuck blocked forever.
+      if (depsSatisfied(task)) {
         task.status = 'todo'
         task.blocked_by = null
         task.blocked_reason = null
@@ -327,14 +609,15 @@ export function autoUnblockDependents(
 
         if (!allMilestoneDepsDone) continue
 
-        // Unblock all blocked tasks in this downstream milestone
+        // Only unblock downstream tasks whose own task-level deps are now satisfied.
         for (const task of downstream.subtasks) {
           if (task.status !== 'blocked') continue
+          if (!depsSatisfied(task)) continue
 
           task.status = 'todo'
           task.blocked_by = null
           task.blocked_reason = null
-          unblocked.push(`Task "${task.id}" (${task.label}) → todo (milestone "${completedMilestoneId}" complete)`)
+          unblocked.push(`Task "${task.id}" (${task.label}) → todo (milestone "${completedMilestoneId}" complete and task deps satisfied)`)
 
           state.agent_log.push({
             id: `log_${Date.now()}_${task.id}`,

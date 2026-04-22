@@ -5,6 +5,7 @@
 
 import { join } from 'path'
 import {
+  DOCS_PATHS,
   TALKSTORE_ROOT,
   readFileSafe,
   type TrackerState,
@@ -190,7 +191,7 @@ export function buildTaskContext(
 
   // ── Product context (domain-specific manifesto sections) ──
   if (options.includeManifesto !== false) {
-    const manifesto = readFileSafe(join(TALKSTORE_ROOT, 'docs/manifesto.md'))
+    const manifesto = readFileSafe(DOCS_PATHS.manifesto)
     if (manifesto) {
       const sectionTitles = DOMAIN_MANIFESTO_SECTIONS[milestone.domain] || DOMAIN_MANIFESTO_SECTIONS['foundation']
       const extracted = extractManifestoSections(manifesto, sectionTitles)

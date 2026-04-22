@@ -2,22 +2,51 @@ import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import type { Subtask } from '../../../main/parser'
 
+// AI Commerce Index Platform — 4-lane palette. Mirrors DOMAIN_COLOR_MAP in
+// ../../domainModel.ts. Legacy raw-domain keys retained so stale milestones
+// don't render with missing colors.
 const DOMAIN_COLORS: Record<string, string> = {
   foundation: '#585CF0',
-  storefront: '#22c55e',
-  product_ops: '#f59e0b',
-  commerce_intel: '#8286FF',
-  launch_prep: '#ef4444',
-  review_buffer: '#9B9BAA',
-  v1_2: '#8286FF',
-  v1_5: '#585CF0',
-  distribution: '#9B9BAA',
+  product_engines: '#14B8A6',
+  merchant_facing: '#5B6EE8',
+  ship_and_operate: '#F59E0B',
+  backend: '#585CF0',
+  data: '#585CF0',
+  compliance: '#F59E0B',
+  product_ops: '#14B8A6',
+  autopilot: '#14B8A6',
+  attribution: '#14B8A6',
+  scoring: '#14B8A6',
+  llm_scoring: '#14B8A6',
+  frontend: '#5B6EE8',
+  quality: '#F59E0B',
+  launch: '#F59E0B',
+  launch_gtm: '#F59E0B',
 }
 
+// Execution-mode palette (used for left border + badge) — operator's spec:
+//   agent = red    (fully autonomous — the agent owns this)
+//   pair  = blue   (agent + operator collaboration required)
+//   human = green  (operator-only; outside agent capability)
 const EXEC_MODE_COLORS: Record<string, string> = {
-  agent: '#ef4444',   // Red
-  human: '#22c55e',   // Green
-  pair: '#3b82f6',    // Blue
+  agent: '#EF4444',
+  pair: '#3B82F6',
+  human: '#22C55E',
+}
+
+const EXEC_MODE_LABELS: Record<string, string> = {
+  agent: 'AGENT',
+  pair: 'PAIR',
+  human: 'HUMAN',
+}
+
+// Complexity badge palette:
+//   S small, M medium, L large, A architectural
+const COMPLEXITY_PALETTE: Record<string, { label: string; color: string }> = {
+  small: { label: 'S', color: '#9B9BAA' },
+  medium: { label: 'M', color: '#5B6EE8' },
+  large: { label: 'L', color: '#8A5CF0' },
+  architectural: { label: 'A', color: '#EF4444' },
 }
 
 const STEP_STYLE = { color: '#c4b5fd', bg: 'rgba(196,181,253,0.15)' }
@@ -79,20 +108,66 @@ export function TaskCard({ subtask, domain, onClick }: TaskCardProps) {
         <div className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-accent animate-pulse" />
       )}
 
-      {/* Top row: domain tag + priority */}
-      <div className="flex items-start justify-between gap-2 mb-1.5">
-        <span
-          className="text-[8px] font-bold px-1.5 py-0.5 rounded tracking-wider flex-shrink-0"
-          style={{ color: domainColor, backgroundColor: domainColor + '18' }}
-        >
-          {domain.replace(/_/g, ' ').toUpperCase()}
-        </span>
-        <span
-          className="text-[9px] font-bold px-1.5 py-0.5 rounded flex-shrink-0"
-          style={{ color: stepStyle.color, backgroundColor: stepStyle.bg }}
-        >
-          {stepLabel}
-        </span>
+      {/* Top row: domain tag + audit badge (left) · complexity + exec-mode + wave (right) */}
+      <div className="flex items-start justify-between gap-1 mb-1.5">
+        <div className="flex items-center gap-1 flex-shrink-0 min-w-0">
+          <span
+            className="text-[8px] font-bold px-1.5 py-0.5 rounded tracking-wider flex-shrink-0"
+            style={{ color: domainColor, backgroundColor: domainColor + '18' }}
+          >
+            {domain.replace(/_/g, ' ').toUpperCase()}
+          </span>
+          {/* Audit badge — visible when the auditor has submitted results */}
+          {subtask.audit_results && (
+            <span
+              className="text-[8px] font-bold px-1.5 py-0.5 rounded tracking-wider flex-shrink-0"
+              style={{
+                color: subtask.audit_results.pass ? '#22C55E' : '#EF4444',
+                backgroundColor: (subtask.audit_results.pass ? '#22C55E' : '#EF4444') + '1a',
+              }}
+              title={
+                subtask.audit_results.pass
+                  ? `Audit passed (${subtask.audit_results.items.filter((i) => i.status === 'pass').length}/12)`
+                  : `Audit failed: ${subtask.audit_results.items.filter((i) => i.status === 'fail').map((i) => i.id).join(', ')}`
+              }
+            >
+              {subtask.audit_results.pass ? '✓ AUDIT' : '✗ AUDIT'}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-1 flex-shrink-0">
+          {/* Complexity badge */}
+          {subtask.complexity && COMPLEXITY_PALETTE[subtask.complexity] && (
+            <span
+              className="text-[9px] font-bold w-4 h-4 rounded flex items-center justify-center"
+              style={{
+                color: COMPLEXITY_PALETTE[subtask.complexity].color,
+                backgroundColor: COMPLEXITY_PALETTE[subtask.complexity].color + '22',
+              }}
+              title={`Complexity: ${subtask.complexity}`}
+            >
+              {COMPLEXITY_PALETTE[subtask.complexity].label}
+            </span>
+          )}
+          {/* Exec-mode badge */}
+          {subtask.execution_mode && EXEC_MODE_LABELS[subtask.execution_mode] && (
+            <span
+              className="text-[8px] font-bold px-1.5 py-0.5 rounded tracking-wider"
+              style={{ color: execModeColor, backgroundColor: execModeColor + '1a' }}
+              title={`Execution mode: ${subtask.execution_mode}`}
+            >
+              {EXEC_MODE_LABELS[subtask.execution_mode]}
+            </span>
+          )}
+          {/* Wave / priority badge */}
+          <span
+            className="text-[9px] font-bold px-1.5 py-0.5 rounded"
+            style={{ color: stepStyle.color, backgroundColor: stepStyle.bg }}
+            title={`Parallel wave: ${stepLabel}`}
+          >
+            {stepLabel}
+          </span>
+        </div>
       </div>
 
       {/* Title */}

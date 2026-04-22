@@ -1,5 +1,5 @@
 /**
- * Talkstore Command Center — Markdown Parser + State File Generator
+ * Sha8al Command Center — Markdown Parser + State File Generator
  * Phase 1, Part 1.2
  *
  * Importable module for the Electron main process.
@@ -18,7 +18,7 @@ export interface Subtask {
   status: 'todo' | 'in_progress' | 'review' | 'done' | 'blocked'
   done: boolean
   assignee: string | null
-  blocked_by: string | null
+  blocked_by: string | string[] | null
   blocked_reason: string | null
   completed_at: string | null
   completed_by: string | null
@@ -38,10 +38,39 @@ export interface Subtask {
   // Execution config
   agent_target: 'explorer' | 'planner' | 'builder' | null
   execution_mode: 'human' | 'agent' | 'pair'
+  execution_mode_reasoning?: string
   last_run_id: string | null
 
   // Pipeline (chained agent dispatch)
   pipeline: Pipeline | null
+
+  // AI Commerce Index Platform pivot — complexity & wave scheduling.
+  // Populated by scripts/apply-dependency-analysis.mjs; consumed by TaskCard.
+  complexity?: 'small' | 'medium' | 'large' | 'architectural'
+  parallel_priority?: number
+  prepared?: boolean
+
+  // Auditor workflow — set when the Auditor agent calls submit_audit on this
+  // task. The MCP server auto-approves backend-lane tasks with 12/12 pass;
+  // frontend/launch tasks stay in `review` with audit_results attached for
+  // operator eyeball. The UI renders an audit badge when this is populated.
+  audit_results?: AuditResult
+}
+
+export interface AuditChecklistItem {
+  id: string
+  category: 'structural' | 'security' | 'compliance' | 'correctness'
+  label: string
+  status: 'pending' | 'pass' | 'fail' | 'n/a'
+  detail?: string
+}
+
+export interface AuditResult {
+  auditor_id: string
+  audited_at: string
+  pass: boolean
+  items: AuditChecklistItem[]
+  summary?: string
 }
 
 export interface Milestone {
@@ -60,6 +89,28 @@ export interface Milestone {
   subtasks: Subtask[]
   dependencies: string[]
   notes: string[]
+
+  // Set by mcp__talkstore__submit_milestone_audit when the milestone-auditor
+  // subsystem completes a cycle. Drives the outer audit-verdict ring on the
+  // swim lane node + the audit summary in MilestoneDetailPanel.
+  audit?: MilestoneAudit
+}
+
+export interface MilestoneFinding {
+  severity: 'critical' | 'major' | 'minor'
+  category: 'coherence' | 'security' | 'ux' | 'compliance'
+  description: string
+  evidence: string
+  remediation?: string
+}
+
+export interface MilestoneAudit {
+  verdict: 'pass' | 'pass_with_notes' | 'fail'
+  findings: MilestoneFinding[]
+  audited_at: string
+  report_path: string
+  state_doc_path: string
+  checklist_items_updated: number
 }
 
 export interface ChecklistItem {
@@ -758,7 +809,10 @@ export function parseAndGenerate(opts: ParseOptions): {
   }
 }
 
-import { TRACKER_PATH, DOCS_PATHS } from './config'
+import {
+  TRACKER_PATH,
+  DOCS_PATHS,
+} from './config'
 
 /**
  * Default paths for the Talkstore project, resolved from config.

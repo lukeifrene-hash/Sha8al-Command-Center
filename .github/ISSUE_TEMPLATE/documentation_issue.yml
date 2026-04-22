@@ -1,0 +1,70 @@
+name: Documentation issue
+description: Report missing, outdated, or unclear documentation.
+title: "[Docs]: "
+labels:
+  - documentation
+  - triage
+body:
+  - type: input
+    id: platform_version
+    attributes:
+      label: Platform version or commit
+      description: Provide the release tag, package version, or commit SHA that the docs should match.
+      placeholder: e.g. 1.0.0 or abc1234
+    validations:
+      required: true
+  - type: dropdown
+    id: target_profile
+    attributes:
+      label: Target profile
+      options:
+        - generic
+        - talkstore
+        - aci
+        - other / mixed
+    validations:
+      required: true
+  - type: dropdown
+    id: talkstore_compatibility
+    attributes:
+      label: Is TalkStore compatibility involved?
+      options:
+        - "No"
+        - "Yes"
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: OS and runtime environment
+      description: Include the environment where the docs were misleading or incomplete.
+    validations:
+      required: true
+  - type: input
+    id: doc_location
+    attributes:
+      label: Affected document or page
+      description: Path or URL for the doc that needs work.
+      placeholder: README.md or docs/task-workflow.md
+    validations:
+      required: true
+  - type: textarea
+    id: expected_behavior
+    attributes:
+      label: Expected guidance
+      description: What should the docs have told you?
+    validations:
+      required: true
+  - type: textarea
+    id: actual_behavior
+    attributes:
+      label: Actual guidance
+      description: What is missing, incorrect, or unclear today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposed_fix
+    attributes:
+      label: Proposed correction
+      description: Share a suggested wording change or doc addition if you have one.

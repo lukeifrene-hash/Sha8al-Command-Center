@@ -6,7 +6,6 @@ import { SwimLaneView } from './views/SwimLaneView'
 import { TaskBoard } from './views/TaskBoard'
 import { AgentHubPlaceholder } from './views/AgentHubPlaceholder'
 import { CalendarView } from './views/CalendarView'
-import { BirdsEyeView } from './views/BirdsEyeView'
 import { QAView } from './views/QAView'
 
 export default function App() {
@@ -39,10 +38,10 @@ export default function App() {
           <div className="text-3xl mb-4">⚠</div>
           <h2 className="text-lg font-semibold text-white mb-2">No Tracker Found</h2>
           <p className="text-sm text-muted font-mono">
-            {error || 'talkstore-tracker.json not found.'}
+            {error || 'Tracker file not found.'}
           </p>
           <p className="text-sm text-muted mt-2">
-            Run <code className="text-accent font-mono">node scripts/parse-markdown.mjs</code> to generate it.
+            Run <code className="text-accent font-mono">npm run tracker:parse</code> to generate it.
           </p>
         </div>
       </div>
@@ -69,7 +68,6 @@ export default function App() {
         {activeTab === 'task-board' && <TaskBoard />}
         {activeTab === 'agent-hub' && <AgentHubPlaceholder />}
         {activeTab === 'calendar' && <CalendarView />}
-        {activeTab === 'birds-eye' && <BirdsEyeView />}
         {activeTab === 'qa' && <QAView />}
       </div>
     </div>

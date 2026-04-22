@@ -1,32 +1,20 @@
 #!/usr/bin/env node
 
 /**
- * Talkstore Command Center — CLI Interface
+ * Sha8al Command Center — CLI Interface
  *
  * Provides the same 17 tools as the MCP server but via shell commands.
  * Works with any agent that can execute bash (Codex, GPT, Gemini, etc.)
+ * Public alias: sha8al-command-center
+ * Compatibility alias: talkstore
  *
  * Usage:
- *   talkstore <command> [args...]
- *   talkstore get-task-context <task_id>
- *   talkstore start-task <task_id>
- *   talkstore complete-task <task_id> "<summary>"
- *   talkstore list-tasks [--milestone <id>] [--status <status>] [--domain <domain>]
- *   talkstore get-project-status
- *   talkstore get-milestone-overview <milestone_id>
- *   talkstore get-checklist-status
- *   talkstore get-task-history <task_id>
- *   talkstore update-task <task_id> [--priority P1|P2|P3] [--assignee <name>] [--mode human|agent|pair] [--notes "<text>"]
- *   talkstore block-task <task_id> "<reason>"
- *   talkstore log-action <task_id> <action> "<description>" [--tags tag1,tag2]
- *   talkstore add-milestone-note <milestone_id> "<note>"
- *   talkstore set-milestone-dates <milestone_id> [--start YYYY-MM-DD] [--end YYYY-MM-DD]
- *   talkstore update-drift <milestone_id> <drift_days>
- *   talkstore list-agents
- *   talkstore register-agent <agent_id> "<name>" <type> [--permissions read,write] [--color "#hex"]
- *   talkstore get-activity-feed [--agent <agent_id>] [--limit <n>]
+ *   sha8al-command-center <command> [args...]
+ *   talkstore <command> [args...]   # compatibility alias
  */
 
+import { readFileSync } from 'fs'
+import { basename } from 'path'
 import { handleTool } from './tools.js'
 
 function parseArgs(args: string[]): { command: string; positional: string[]; flags: Record<string, string> } {
@@ -50,10 +38,22 @@ function parseArgs(args: string[]): { command: string; positional: string[]; fla
   return { command, positional, flags }
 }
 
-function printHelp() {
-  console.log(`Talkstore Command Center CLI
+function resolveCliName() {
+  const invoked = basename(process.argv[1] || '').replace(/\.[^.]+$/, '')
+  if (invoked === 'talkstore' || invoked === 'sha8al-command-center') return invoked
+  return 'sha8al-command-center'
+}
 
-USAGE: talkstore <command> [args...]
+function printHelp() {
+  const cliName = resolveCliName()
+
+  console.log(`Sha8al Command Center CLI (sha8al-command-center)
+Compatibility alias: talkstore
+
+USAGE:
+  ${cliName} <command> [args...]
+  sha8al-command-center <command> [args...]
+  talkstore <command> [args...]   # compatibility alias
 
 READ COMMANDS:
   get-task-context <task_id>              Full context for a task (milestone, deps, conventions)
@@ -79,8 +79,43 @@ WRITE COMMANDS:
   add-milestone-note <milestone_id> "<note>"
   set-milestone-dates <milestone_id> [--start YYYY-MM-DD] [--end YYYY-MM-DD]
   update-drift <milestone_id> <drift_days>
-  register-agent <agent_id> "<name>" <type> [--permissions read,write] [--color "#hex"]
+  register-agent <agent_id> "<name>" <type> [--permissions read,write] [--color "#hex"] [--parent <agent_id>]
   toggle-checklist-item <item_id> <true|false>  Toggle a submission checklist item
+
+THREE-PHASE WORKFLOW (sweep / prepare / build):
+  claim-next-task [--tier small|medium|large|architectural] [--milestone id] [--mode agent|pair|human] [--agent <agent_id>]
+      Atomically claim the next eligible todo task (status=todo, deps satisfied).
+      Sort: parallel_priority ascending, then id. Sets status=in_progress + assignee.
+  compute-waves <milestone_id> [--tier small|...]
+      Group a milestone's remaining tasks into parallel execution waves by parallel_priority.
+  bulk-prepare <milestone_id> [--tier medium|large|architectural]
+      Return non-small tasks still needing prepare-phase enrichment (prepared !== true).
+  check-file-collisions <id1> [<id2> ...]
+      Inspect prompts of N tasks, return any file referenced by 2+ tasks.
+
+AUDITOR WORKFLOW (auto-approve pipeline):
+  request-audit <task_id> [--cross-model true|false] [--auditor <id>]
+      Begin an audit on a task in review status. Returns context + 12-point checklist template +
+      milestone lane + auto_approve_eligible flag.
+  submit-audit <task_id> --results <json_path|@->  --auditor <id> [--summary "<text>"]
+      Submit the filled-in checklist. --results accepts a path to a JSON file containing the
+      AuditChecklistItem[] array, or "@-" to read the array from stdin. Auto-approves when
+      pass=true AND lane is foundation or product_engines.
+  get-next-actionable-tasks [--milestone <id>] [--tier small|medium|large|architectural] [--limit <n>]
+      Return todo tasks ready to run, sorted by parallel_priority then id. Includes tier histogram.
+
+MILESTONE AUDITOR (post-milestone audit bundle + submission):
+  start-milestone-audit <milestone_id>
+      Validate that all subtasks are done, then return the full audit-context bundle
+      (manifesto excerpts, prior state doc, subtask summaries, exit criteria, linked
+      checklist categories, diff-range hint). Errors out if milestone isn't ready.
+  get-milestone-audit-context <milestone_id>
+      Same bundle as start-milestone-audit, but without readiness validation or state
+      mutation. Safe to call any time — useful for re-entry / inspection.
+  submit-milestone-audit <milestone_id> --payload <json_path|@-> [--auditor <id>]
+      Record the audit outcome. --payload accepts a JSON file (or "@-" for stdin)
+      with keys: verdict, findings[], checklist_updates[], report_path, state_doc_path,
+      optional audited_at.
 `)
 }
 
@@ -244,6 +279,7 @@ async function run() {
         type: positional[2],
         permissions: flags.permissions ? flags.permissions.split(',') : ['read'],
         ...(flags.color && { color: flags.color }),
+        ...(flags.parent && { parent_id: flags.parent }),
       }
       break
 
@@ -252,8 +288,135 @@ async function run() {
       toolArgs = { item_id: positional[0], done: positional[1] === 'true' }
       break
 
+    // ── Three-phase workflow commands ──
+    case 'claim-next-task':
+      toolName = 'claim_next_task'
+      toolArgs = {
+        ...(flags.tier && { tier: flags.tier }),
+        ...(flags.milestone && { milestone_id: flags.milestone }),
+        ...(flags.mode && { execution_mode: flags.mode }),
+        ...(flags.agent && { agent_id: flags.agent }),
+      }
+      break
+
+    case 'compute-waves':
+      toolName = 'compute_waves'
+      toolArgs = {
+        milestone_id: positional[0],
+        ...(flags.tier && { tier: flags.tier }),
+      }
+      break
+
+    case 'bulk-prepare':
+      toolName = 'bulk_prepare'
+      toolArgs = {
+        milestone_id: positional[0],
+        ...(flags.tier && { tier: flags.tier }),
+      }
+      break
+
+    case 'check-file-collisions':
+      toolName = 'check_file_collisions'
+      toolArgs = { task_ids: positional }
+      break
+
+    // ── Auditor workflow commands ──
+    case 'request-audit':
+      toolName = 'request_audit'
+      toolArgs = {
+        task_id: positional[0],
+        ...(flags['cross-model'] && { cross_model: flags['cross-model'] === 'true' }),
+        ...(flags.auditor && { auditor_id: flags.auditor }),
+      }
+      break
+
+    case 'submit-audit': {
+      toolName = 'submit_audit'
+      let results: unknown = []
+      const resultsFlag = flags.results
+      if (resultsFlag) {
+        let raw: string
+        if (resultsFlag === '@-') {
+          raw = readFileSync(0, 'utf-8')
+        } else {
+          raw = readFileSync(resultsFlag, 'utf-8')
+        }
+        try {
+          results = JSON.parse(raw)
+        } catch (err) {
+          console.error(`Failed to parse --results JSON: ${err instanceof Error ? err.message : String(err)}`)
+          process.exit(1)
+        }
+      }
+      toolArgs = {
+        task_id: positional[0],
+        results,
+        auditor_id: flags.auditor || 'auditor',
+        ...(flags.summary && { auditor_summary: flags.summary }),
+      }
+      break
+    }
+
+    case 'get-next-actionable-tasks':
+      toolName = 'get_next_actionable_tasks'
+      toolArgs = {
+        ...(flags.milestone && { milestone_id: flags.milestone }),
+        ...(flags.tier && { tier: flags.tier }),
+        ...(flags.limit && { limit: parseInt(flags.limit, 10) }),
+      }
+      break
+
+    // ── Milestone Auditor commands ──
+    case 'start-milestone-audit':
+      toolName = 'start_milestone_audit'
+      toolArgs = { milestone_id: positional[0] }
+      break
+
+    case 'get-milestone-audit-context':
+      toolName = 'get_milestone_audit_context'
+      toolArgs = { milestone_id: positional[0] }
+      break
+
+    case 'submit-milestone-audit': {
+      toolName = 'submit_milestone_audit'
+      const payloadFlag = flags.payload
+      if (!payloadFlag) {
+        console.error('submit-milestone-audit requires --payload <json_path|@->')
+        process.exit(1)
+      }
+      let raw: string
+      try {
+        if (payloadFlag === '@-') {
+          raw = readFileSync(0, 'utf-8')
+        } else {
+          raw = readFileSync(payloadFlag, 'utf-8')
+        }
+      } catch (err) {
+        console.error(`Failed to read --payload: ${err instanceof Error ? err.message : String(err)}`)
+        process.exit(1)
+      }
+      let parsed: Record<string, unknown>
+      try {
+        parsed = JSON.parse(raw)
+      } catch (err) {
+        console.error(`Failed to parse --payload JSON: ${err instanceof Error ? err.message : String(err)}`)
+        process.exit(1)
+      }
+      toolArgs = {
+        milestone_id: positional[0],
+        verdict: parsed.verdict,
+        findings: parsed.findings ?? [],
+        checklist_updates: parsed.checklist_updates ?? [],
+        report_path: parsed.report_path,
+        state_doc_path: parsed.state_doc_path,
+        ...(parsed.audited_at ? { audited_at: parsed.audited_at } : {}),
+        ...(flags.auditor ? { auditor_id: flags.auditor } : {}),
+      }
+      break
+    }
+
     default:
-      console.error(`Unknown command: ${command}\nRun "talkstore help" for usage.`)
+      console.error(`Unknown command: ${command}\nRun "sha8al-command-center help" or "talkstore help" for usage.`)
       process.exit(1)
   }
 

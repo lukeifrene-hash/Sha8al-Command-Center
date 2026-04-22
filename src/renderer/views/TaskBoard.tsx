@@ -19,16 +19,25 @@ import { KanbanColumn, COLUMNS, type ColumnId } from '../components/taskboard/Ka
 import { TaskDetailModal } from '../components/taskboard/TaskDetailModal'
 import { ChecklistSection } from '../components/taskboard/ChecklistSection'
 
+// AI Commerce Index Platform — 4-lane palette. Mirrors DOMAIN_COLOR_MAP in
+// ../domainModel.ts.
 const DOMAIN_COLORS: Record<string, string> = {
   foundation: '#585CF0',
-  storefront: '#22c55e',
-  product_ops: '#f59e0b',
-  commerce_intel: '#8286FF',
-  launch_prep: '#ef4444',
-  review_buffer: '#9B9BAA',
-  v1_2: '#8286FF',
-  v1_5: '#585CF0',
-  distribution: '#9B9BAA',
+  product_engines: '#14B8A6',
+  merchant_facing: '#5B6EE8',
+  ship_and_operate: '#F59E0B',
+  backend: '#585CF0',
+  data: '#585CF0',
+  compliance: '#F59E0B',
+  product_ops: '#14B8A6',
+  autopilot: '#14B8A6',
+  attribution: '#14B8A6',
+  scoring: '#14B8A6',
+  llm_scoring: '#14B8A6',
+  frontend: '#5B6EE8',
+  quality: '#F59E0B',
+  launch: '#F59E0B',
+  launch_gtm: '#F59E0B',
 }
 
 export function TaskBoard() {
