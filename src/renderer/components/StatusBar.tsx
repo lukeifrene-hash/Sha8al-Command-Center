@@ -99,6 +99,20 @@ export function StatusBar() {
       {/* Commit + push */}
       <CommitButton />
 
+      {/* Command palette hint */}
+      <button
+        onClick={() => useStore.getState().setCommandPaletteOpen(true)}
+        className="flex items-center gap-1.5 px-2 py-1 rounded-md text-[10px] font-medium transition-colors hover:bg-white/5"
+        style={{ color: 'var(--theme-muted)', WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+        title="Open Command Palette (Cmd+K)"
+      >
+        <svg className="w-3 h-3" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+          <circle cx="7" cy="7" r="5" />
+          <path d="M11 11l3.5 3.5" />
+        </svg>
+        <kbd className="font-mono px-1 rounded border text-[9px]" style={{ borderColor: 'var(--theme-border)' }}>⌘K</kbd>
+      </button>
+
       {/* Theme toggle */}
       <ThemeToggle />
     </div>

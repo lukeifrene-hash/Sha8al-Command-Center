@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { WorkspaceStatus } from '../main/workspace'
+import type { AgentExecution, WaveState } from '../main/agent-runtime'
 
 contextBridge.exposeInMainWorld('api', {
   platform: process.platform,
@@ -47,6 +48,52 @@ contextBridge.exposeInMainWorld('api', {
       | { status: 'nothing' }
       | { status: 'error'; error: string }
     > => ipcRenderer.invoke('git:commit-and-push'),
+  },
+
+  // Agent runtime operations
+  agent: {
+    listExecutions: (): Promise<AgentExecution[]> => ipcRenderer.invoke('agent:listExecutions'),
+    getExecution: (id: string): Promise<AgentExecution | null> => ipcRenderer.invoke('agent:getExecution', id),
+    spawn: (params: {
+      agentId: string
+      agentName: string
+      command: string
+      args?: string[]
+      taskId?: string
+      milestoneId?: string
+    }): Promise<{ executionId: string }> => ipcRenderer.invoke('agent:spawn', params),
+    abort: (id: string): Promise<boolean> => ipcRenderer.invoke('agent:abort', id),
+    retry: (id: string): Promise<string | null> => ipcRenderer.invoke('agent:retry', id),
+  },
+
+  // Autonomous wave operations
+  wave: {
+    start: (config: {
+      waveId: string
+      milestoneId: string
+      agentSequence: string[]
+      parallel: boolean
+      autoApprove: boolean
+    }): Promise<{ waveId: string }> => ipcRenderer.invoke('wave:start', config),
+    pause: (waveId: string): Promise<boolean> => ipcRenderer.invoke('wave:pause', waveId),
+    resume: (waveId: string): Promise<boolean> => ipcRenderer.invoke('wave:resume', waveId),
+    abort: (waveId: string): Promise<boolean> => ipcRenderer.invoke('wave:abort', waveId),
+    status: (waveId: string): Promise<WaveState | null> => ipcRenderer.invoke('wave:status', waveId),
+  },
+
+  // Event bus for real-time updates
+  events: {
+    onEvent: (callback: (event: { type: string; payload: unknown }) => void): (() => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, payload: string) => {
+        try {
+          callback(JSON.parse(payload))
+        } catch { /* ignore malformed */ }
+      }
+      ipcRenderer.on('sha8al:event', handler)
+      return () => ipcRenderer.removeListener('sha8al:event', handler)
+    },
+    dispatch: (event: { type: string; payload: unknown }): Promise<{ success: boolean }> =>
+      ipcRenderer.invoke('bus:dispatch', event),
   },
 
 })

@@ -11,6 +11,20 @@ import {
   getWorkspaceStatus,
   importRoadmap,
 } from './workspace'
+import { eventBus } from './event-bus'
+import {
+  configureRuntime,
+  spawnAgentExecution,
+  abortExecution,
+  retryExecution,
+  listExecutions,
+  getExecution,
+  startAutonomousWave,
+  pauseWave,
+  resumeWave,
+  abortWave,
+  getWaveStatus,
+} from './agent-runtime'
 
 let mainWindow: BrowserWindow | null = null
 let fileWatcher: fs.FSWatcher | null = null
@@ -52,6 +66,11 @@ function createWindow(): void {
   mainWindow.once('ready-to-show', () => {
     mainWindow?.show()
   })
+
+  // Register window with event bus for real-time updates
+  if (mainWindow) {
+    eventBus.registerWindow(mainWindow)
+  }
 
   if (process.env.ELECTRON_RENDERER_URL) {
     mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL)
@@ -203,6 +222,72 @@ ipcMain.handle('workspace:generateTracker', async () => {
 
 ipcMain.handle('git:commit-and-push', async () => {
   return commitAndPush()
+})
+
+// ─── Agent Runtime IPC ─────────────────────────────────────────────────────
+
+ipcMain.handle('agent:listExecutions', async () => {
+  return listExecutions()
+})
+
+ipcMain.handle('agent:getExecution', async (_event, id: string) => {
+  return getExecution(id)
+})
+
+ipcMain.handle('agent:spawn', async (_event, params: {
+  agentId: string
+  agentName: string
+  command: string
+  args?: string[]
+  taskId?: string
+  milestoneId?: string
+}) => {
+  const id = spawnAgentExecution(params)
+  return { executionId: id }
+})
+
+ipcMain.handle('agent:abort', async (_event, id: string) => {
+  return abortExecution(id)
+})
+
+ipcMain.handle('agent:retry', async (_event, id: string) => {
+  return retryExecution(id)
+})
+
+// ─── Autonomous Wave IPC ───────────────────────────────────────────────────
+
+ipcMain.handle('wave:start', async (_event, config: {
+  waveId: string
+  milestoneId: string
+  agentSequence: string[]
+  parallel: boolean
+  autoApprove: boolean
+}) => {
+  const id = startAutonomousWave(config)
+  return { waveId: id }
+})
+
+ipcMain.handle('wave:pause', async (_event, waveId: string) => {
+  return pauseWave(waveId)
+})
+
+ipcMain.handle('wave:resume', async (_event, waveId: string) => {
+  return resumeWave(waveId)
+})
+
+ipcMain.handle('wave:abort', async (_event, waveId: string) => {
+  return abortWave(waveId)
+})
+
+ipcMain.handle('wave:status', async (_event, waveId: string) => {
+  return getWaveStatus(waveId)
+})
+
+// ─── Event Bus IPC ─────────────────────────────────────────────────────────
+
+ipcMain.handle('bus:dispatch', async (_event, eventPayload: { type: string; payload: unknown }) => {
+  eventBus.dispatchFromRenderer(eventPayload as any)
+  return { success: true }
 })
 
 // ─── App Lifecycle ───────────────────────────────────────────────────────────

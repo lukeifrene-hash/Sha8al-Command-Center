@@ -96,9 +96,9 @@ export function TaskBoard() {
   const filteredSubtasks = milestone.subtasks.filter((s) => {
     switch (filter) {
       case 'my_tasks':
-        return s.assignee === 'Luqman'
+        return s.assignee !== null && s.assignee !== 'agent' && s.execution_mode !== 'agent'
       case 'agent_tasks':
-        return s.assignee !== null && s.assignee !== 'Luqman'
+        return s.assignee === 'agent' || s.execution_mode === 'agent'
       case 'blocked':
         return s.status === 'blocked'
       default:
@@ -109,8 +109,8 @@ export function TaskBoard() {
   // Filter counts (computed from all subtasks, not filtered ones)
   const filterCounts: Record<FilterType, number> = {
     all: milestone.subtasks.length,
-    my_tasks: milestone.subtasks.filter((s) => s.assignee === 'Luqman').length,
-    agent_tasks: milestone.subtasks.filter((s) => s.assignee !== null && s.assignee !== 'Luqman').length,
+    my_tasks: milestone.subtasks.filter((s) => s.assignee !== null && s.assignee !== 'agent' && s.execution_mode !== 'agent').length,
+    agent_tasks: milestone.subtasks.filter((s) => s.assignee === 'agent' || s.execution_mode === 'agent').length,
     blocked: milestone.subtasks.filter((s) => s.status === 'blocked').length,
   }
 
@@ -177,7 +177,7 @@ export function TaskBoard() {
 
       if (targetColumn === 'done') {
         task.completed_at = new Date().toISOString()
-        task.completed_by = task.assignee || 'Luqman'
+        task.completed_by = task.assignee || 'operator'
         task.blocked_by = null
         task.blocked_reason = null
       } else if (targetColumn === 'blocked') {

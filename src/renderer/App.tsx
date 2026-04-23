@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useCallback } from 'react'
 import { useStore, initStore } from './store'
 import { TabBar } from './components/TabBar'
 import { StatusBar } from './components/StatusBar'
@@ -8,9 +8,11 @@ import { AgentHubPlaceholder } from './views/AgentHubPlaceholder'
 import { CalendarView } from './views/CalendarView'
 import { QAView } from './views/QAView'
 import { OnboardingView } from './views/OnboardingView'
+import { CommandPalette } from './components/CommandPalette'
+import { NotificationCenter } from './components/NotificationCenter'
 
 export default function App() {
-  const { loading, activeTab, tracker, theme } = useStore()
+  const { loading, activeTab, tracker, theme, commandPaletteOpen, setCommandPaletteOpen } = useStore()
 
   useEffect(() => {
     initStore().catch(err => console.error('Failed to initialize store:', err))
@@ -20,6 +22,23 @@ export default function App() {
   useEffect(() => {
     document.documentElement.dataset.theme = theme
   }, [theme])
+
+  // Global Cmd+K shortcut for command palette
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault()
+        setCommandPaletteOpen(!commandPaletteOpen)
+      }
+      if (e.key === 'Escape' && commandPaletteOpen) {
+        setCommandPaletteOpen(false)
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [commandPaletteOpen, setCommandPaletteOpen])
+
+  const closePalette = useCallback(() => setCommandPaletteOpen(false), [setCommandPaletteOpen])
 
   if (loading) {
     return (
@@ -38,9 +57,15 @@ export default function App() {
 
   return (
     <div className="h-screen bg-dark flex flex-col">
+      {/* Command Palette overlay */}
+      <CommandPalette isOpen={commandPaletteOpen} onClose={closePalette} />
+
+      {/* Notification Center */}
+      <NotificationCenter />
+
       {/* Draggable title bar region for macOS */}
       <div
-        className="h-12 flex-shrink-0 flex items-center"
+        className="h-12 flex-shrink-0 flex items-center nav-glass"
         style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
       >
         <div className="flex items-center gap-3 w-full px-4" style={{ paddingLeft: '80px' }}>

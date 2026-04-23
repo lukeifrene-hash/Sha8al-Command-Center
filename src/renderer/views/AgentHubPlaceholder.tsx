@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback, useEffect } from 'react'
 import { useStore, selectTotalSubtasks, selectCurrentWeek, selectCurrentPhase, selectOverallProgress, selectScheduleStatus } from '../store'
 import type { TrackerState } from '../store'
+import { AgentExecutionPanel } from '../components/AgentExecutionPanel'
 
 type Agent = TrackerState['agents'][number]
 type LogEntry = TrackerState['agent_log'][number]
@@ -480,6 +481,7 @@ function StatBox({ label, value, color }: { label: string; value: number; color:
 function RightColumn({ tracker }: { tracker: TrackerState }) {
   return (
     <div className="flex-1 flex flex-col gap-4 min-w-0 overflow-hidden">
+      <AgentExecutionPanel />
       <ActivityFeed tracker={tracker} />
       <AgentPerformanceStats tracker={tracker} />
     </div>

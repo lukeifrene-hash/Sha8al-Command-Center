@@ -7,6 +7,58 @@ export type { TrackerState }
 export type TabId = 'swim-lane' | 'task-board' | 'agent-hub' | 'calendar' | 'qa'
 export type Theme = 'dark' | 'light'
 
+// ─── Agent Execution Types (mirrors main/agent-runtime.ts) ────────────────
+
+export type AgentExecutionStatus =
+  | 'idle'
+  | 'queued'
+  | 'running'
+  | 'paused'
+  | 'completed'
+  | 'failed'
+  | 'aborted'
+
+export interface AgentExecution {
+  id: string
+  agentId: string
+  agentName: string
+  taskId: string | null
+  milestoneId: string | null
+  status: AgentExecutionStatus
+  command: string
+  args: string[]
+  pid: number | null
+  startTime: string | null
+  endTime: string | null
+  exitCode: number | null
+  stdout: string[]
+  stderr: string[]
+  reasoningTrace: string[]
+  tokenEstimate: number
+  costEstimate: number
+  progress: number
+}
+
+export interface WaveState {
+  waveId: string
+  milestoneId: string
+  currentStep: number
+  totalSteps: number
+  status: 'running' | 'paused' | 'completed' | 'failed'
+  executionIds: string[]
+}
+
+// ─── Notification Type ───────────────────────────────────────────────────────
+
+export interface AppNotification {
+  id: string
+  level: 'info' | 'warning' | 'error'
+  message: string
+  source: string
+  timestamp: string
+  read: boolean
+}
+
 interface AppState {
   // Core data
   tracker: TrackerState | null
@@ -19,6 +71,14 @@ interface AppState {
   activeTab: TabId
   selectedMilestoneId: string | null
   theme: Theme
+  commandPaletteOpen: boolean
+
+  // Agent runtime state
+  agentExecutions: AgentExecution[]
+  activeWaves: WaveState[]
+
+  // Notifications
+  notifications: AppNotification[]
 
   // Actions
   setTracker: (data: TrackerState | null) => void
@@ -29,6 +89,18 @@ interface AppState {
   setError: (err: string | null) => void
   setSynced: (v: boolean) => void
   toggleTheme: () => void
+  setCommandPaletteOpen: (v: boolean) => void
+
+  // Agent execution actions
+  setAgentExecutions: (executions: AgentExecution[]) => void
+  addAgentExecution: (execution: AgentExecution) => void
+  updateAgentExecution: (id: string, patch: Partial<AgentExecution>) => void
+  setActiveWaves: (waves: WaveState[]) => void
+
+  // Notification actions
+  addNotification: (n: Omit<AppNotification, 'id' | 'timestamp' | 'read'>) => void
+  dismissNotification: (id: string) => void
+  markNotificationRead: (id: string) => void
 
   // Mutation helpers — mutate tracker and trigger auto write-back
   updateTracker: (updater: (draft: TrackerState) => void) => void
@@ -157,6 +229,10 @@ export const useStore = create<AppState>()((set, get) => ({
   activeTab: 'swim-lane' as TabId,
   selectedMilestoneId: null,
   theme: getInitialTheme(),
+  commandPaletteOpen: false,
+  agentExecutions: [],
+  activeWaves: [],
+  notifications: [],
 
   // setTracker: used for loading/external updates — does NOT write back
   setTracker: (data) => set({ tracker: data, error: null }),
@@ -171,6 +247,40 @@ export const useStore = create<AppState>()((set, get) => ({
     try { localStorage.setItem('talkstore-theme', next) } catch { /* ignore */ }
     set({ theme: next })
   },
+  setCommandPaletteOpen: (v) => set({ commandPaletteOpen: v }),
+
+  // Agent execution actions
+  setAgentExecutions: (executions) => set({ agentExecutions: executions }),
+  addAgentExecution: (execution) => set((state) => ({
+    agentExecutions: [execution, ...state.agentExecutions],
+  })),
+  updateAgentExecution: (id, patch) => set((state) => ({
+    agentExecutions: state.agentExecutions.map((e) =>
+      e.id === id ? { ...e, ...patch } : e
+    ),
+  })),
+  setActiveWaves: (waves) => set({ activeWaves: waves }),
+
+  // Notification actions
+  addNotification: (n) => set((state) => ({
+    notifications: [
+      {
+        ...n,
+        id: Math.random().toString(36).slice(2),
+        timestamp: new Date().toISOString(),
+        read: false,
+      },
+      ...state.notifications,
+    ].slice(0, 50), // Keep last 50
+  })),
+  dismissNotification: (id) => set((state) => ({
+    notifications: state.notifications.filter((n) => n.id !== id),
+  })),
+  markNotificationRead: (id) => set((state) => ({
+    notifications: state.notifications.map((n) =>
+      n.id === id ? { ...n, read: true } : n
+    ),
+  })),
 
   // updateTracker: used for app-initiated mutations — DOES write back
   updateTracker: (updater) => {
@@ -237,6 +347,71 @@ export async function initStore(): Promise<void> {
       // Ignore corrupt JSON
     }
   })
+
+  // Listen for event bus events from main process
+  if ((window as any).api?.events) {
+    ((window as any).api.events as EventTarget).addEventListener('sha8al:event', ((e: CustomEvent) => {
+      try {
+        const event = JSON.parse(e.detail) as { type: string; payload: unknown }
+        handleEventBusEvent(event)
+      } catch {
+        // Ignore malformed events
+      }
+    }) as EventListener)
+  }
+}
+
+function handleEventBusEvent(event: { type: string; payload: unknown }): void {
+  const state = useStore.getState()
+
+  switch (event.type) {
+    case 'agent:spawned': {
+      const p = event.payload as { executionId: string; agentId: string; taskId: string | null }
+      // Execution will be populated via agent:output and agent:finished
+      break
+    }
+    case 'agent:output': {
+      const p = event.payload as { executionId: string; chunk: string; stream: 'stdout' | 'stderr' }
+      const exec = state.agentExecutions.find(e => e.id === p.executionId)
+      if (exec) {
+        const patch: Partial<AgentExecution> = {}
+        if (p.stream === 'stdout') {
+          patch.stdout = [...exec.stdout, p.chunk]
+        } else {
+          patch.stderr = [...exec.stderr, p.chunk]
+        }
+        state.updateAgentExecution(p.executionId, patch)
+      }
+      break
+    }
+    case 'agent:finished': {
+      const p = event.payload as { executionId: string; status: AgentExecutionStatus; exitCode: number | null }
+      state.updateAgentExecution(p.executionId, {
+        status: p.status,
+        exitCode: p.exitCode,
+        endTime: new Date().toISOString(),
+      })
+      break
+    }
+    case 'task:started':
+    case 'task:completed':
+    case 'task:blocked': {
+      // Refresh tracker to pick up mutations
+      window.api.tracker.read().then((json) => {
+        if (json) {
+          const data = JSON.parse(json) as TrackerState
+          data.project.current_week = selectCurrentWeek(data)
+          state.setTracker(data)
+        }
+      }).catch(() => {})
+      break
+    }
+    case 'notification': {
+      const p = event.payload as { level: 'info' | 'warning' | 'error'; message: string; source: string }
+      state.addNotification(p)
+      break
+    }
+  }
 }
 
 export async function refreshWorkspaceStatus(): Promise<void> {
