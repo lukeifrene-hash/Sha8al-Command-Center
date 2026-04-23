@@ -51,12 +51,22 @@ function makeExternalProjectFixture(root) {
 
   writeText(join(root, 'README.md'), '# External example\n')
   writeText(
-    join(root, 'docs/tasks.md'),
+    join(root, 'docs/roadmap.md'),
     [
       '# THE BUILD ROADMAP',
       '',
       '## WEEK 1 - Example Foundation',
       '- [ ] Bootstrap the public example',
+      '',
+    ].join('\n')
+  )
+  writeText(
+    join(root, 'docs/tasks.md'),
+    [
+      '# THE BUILD ROADMAP',
+      '',
+      '## WEEK 1 - TalkStore Compatibility',
+      '- [ ] Preserve the legacy task source path',
       '',
     ].join('\n')
   )
@@ -99,11 +109,11 @@ function makeExternalProjectFixture(root) {
       parser_profile: 'talkstore',
       parser_id: 'talkstore-markdown',
       parser_source_pairing: 'talkstore-markdown:talkstore',
-      tasks_source: 'docs/tasks.md',
+      tasks_source: 'docs/roadmap.md',
       checklist_source: 'docs/submission-checklist.md',
       manifesto_source: 'docs/manifesto.md',
       source_files: {
-        tasks: 'docs/tasks.md',
+        tasks: 'docs/roadmap.md',
         checklist: 'docs/submission-checklist.md',
         manifesto: 'docs/manifesto.md',
       },
@@ -124,8 +134,7 @@ async function main() {
     COMMAND_CENTER_PROJECT_ROOT: externalProject,
     TALKSTORE_PROJECT_ROOT: siblingTalkstore,
     COMMAND_CENTER_TRACKER_FILE: 'command-center-tracker.json',
-    COMMAND_CENTER_TASKS_DOC: 'docs/tasks.md',
-    COMMAND_CENTER_CHECKLIST_DOC: 'docs/submission-checklist.md',
+    COMMAND_CENTER_TASKS_DOC: 'docs/roadmap.md',
     COMMAND_CENTER_MANIFESTO_DOC: 'docs/manifesto.md',
   }
 
@@ -137,8 +146,7 @@ async function main() {
       parserId: 'generic-markdown',
       argv: [
         '--profile=generic',
-        '--tasks-source=docs/tasks.md',
-        '--checklist-source=docs/submission-checklist.md',
+        '--tasks-source=docs/roadmap.md',
         '--manifesto-source=docs/manifesto.md',
       ],
     })
@@ -162,9 +170,7 @@ async function main() {
   assert(runtimeConfig.PROJECT_ROOT === externalProject, 'runtime should resolve the explicit project root')
   assert(runtimeConfig.TRACKER_FILE === 'command-center-tracker.json', 'runtime should honor the explicit tracker filename')
   assert(runtimeConfig.TRACKER_PATH === join(externalProject, 'command-center-tracker.json'), 'runtime should build the tracker path from the explicit root and tracker file')
-  assert(runtimeConfig.DOCS_PATHS.roadmap === join(externalProject, 'docs/tasks.md'), 'runtime should resolve the task doc override')
-  assert(runtimeConfig.DOCS_PATHS.checklist === join(externalProject, 'docs/submission-checklist.md'), 'runtime should resolve the checklist doc override')
-
+  assert(runtimeConfig.DOCS_PATHS.roadmap === join(externalProject, 'docs/roadmap.md'), 'runtime should resolve the roadmap doc override')
   assert(mcpTracker.PROFILE_ID === 'generic', 'MCP tracker should honor explicit COMMAND_CENTER_PROFILE=generic')
   assert(mcpTracker.PROJECT_ROOT === externalProject, 'MCP tracker should resolve the explicit project root')
   assert(mcpTracker.TRACKER_FILE === 'command-center-tracker.json', 'MCP tracker should honor the explicit tracker filename')
@@ -179,8 +185,8 @@ async function main() {
   assert(genericPaths.projectRoot === externalProject, 'parser should resolve the explicit project root')
   assert(genericPaths.trackerFile === 'command-center-tracker.json', 'parser should honor the explicit tracker filename')
   assert(genericPaths.parserProfile === 'generic', 'parser should resolve the generic parser profile for the public path')
-  assert(genericPaths.tasksPath === join(externalProject, 'docs/tasks.md'), 'parser should resolve the task doc override')
-  assert(genericPaths.checklistPath === join(externalProject, 'docs/submission-checklist.md'), 'parser should resolve the checklist doc override')
+  assert(genericPaths.tasksPath === join(externalProject, 'docs/roadmap.md'), 'parser should resolve the roadmap doc override')
+  assert(genericPaths.checklistPath === join(externalProject, 'docs/submission-checklist.md'), 'parser should still expose the conventional checklist path when present')
   assert(genericPaths.manifestoPath === join(externalProject, 'docs/manifesto.md'), 'parser should resolve the manifesto override')
 
   assert(aciPaths.projectRoot === externalProject, 'ACI parser should resolve the explicit project root')

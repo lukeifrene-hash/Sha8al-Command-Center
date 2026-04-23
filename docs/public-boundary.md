@@ -27,7 +27,7 @@ Current markdown-parser contract:
 - `COMMAND_CENTER_PROFILE` is the consumer-profile switch for public installs.
 - The public markdown path runs under parser profile `generic` and stamps `generic-markdown:generic`.
 - The TalkStore compatibility path runs under parser profile `talkstore` and stamps `talkstore-markdown:talkstore`.
-- Parser/source compatibility stays explicit. `docs/roadmap.md` is only used when a command requests it directly.
+- Parser/source compatibility stays explicit. Public installs require `docs/roadmap.md`; TalkStore compatibility keeps its own task-source aliases.
 
 ## TalkStore Compatibility Surface
 

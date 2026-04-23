@@ -4,18 +4,20 @@
  * Sha8al Command Center — Markdown Parser + State File Generator
  * Phase 1, Part 1.2
  *
- * Reads project markdown sources and generates the resolved tracker file for the active profile.
+ * Reads project roadmap and optional checklist markdown sources and generates the resolved tracker file for the active profile.
  * Re-runnable: if the tracker exists, preserves completion status of already-done items.
  *
  * Usage:
- *   node scripts/parse-markdown.mjs --consumer-profile=generic --profile=generic --tasks-source=docs/tasks.md --checklist-source=docs/submission-checklist.md
+ *   node scripts/parse-markdown.mjs --consumer-profile=generic --profile=generic --tasks-source=docs/roadmap.md
  *   node scripts/parse-markdown.mjs --consumer-profile=talkstore --profile=talkstore --tasks-source=docs/tasks.md --checklist-source=docs/submission-checklist.md --dry-run
  */
 
 import { readFileSync, existsSync } from 'fs'
 import { basename } from 'path'
+import { loadCanonicalAgentRoster, mergeCanonicalAgentRoster } from './lib/canonical-agents.mjs'
 import { resolveParserProjectPaths } from './lib/project-paths.mjs'
 import { validateParserProfilePairing } from './lib/profile-validators.mjs'
+import { classifyTaskComplexity } from './lib/task-complexity.mjs'
 import { writeTrackerJsonWithBackup } from './lib/tracker-backup.mjs'
 
 function readCliFlag(argv, keys) {
@@ -360,6 +362,17 @@ function parseRoadmap(content) {
           completed_by: null,
           priority: 'P1',
           notes: null,
+          prompt: null,
+          context_files: [],
+          reference_docs: [],
+          acceptance_criteria: [],
+          constraints: [],
+          depends_on: [],
+          agent_target: null,
+          execution_mode: 'human',
+          last_run_id: null,
+          pipeline: null,
+          complexity: classifyTaskComplexity(label),
         })
       }
     }
@@ -452,28 +465,7 @@ function generateTrackerState(milestones, submissionChecklist, projectName) {
     },
     milestones,
     submission_checklist: submissionChecklist,
-    agents: [
-      {
-        id: 'claude_chat',
-        name: 'Claude (Project Chat)',
-        type: 'synchronous',
-        color: '#22c55e',
-        status: 'active',
-        permissions: ['read', 'write'],
-        last_action_at: null,
-        session_action_count: 0,
-      },
-      {
-        id: 'luqman',
-        name: 'Luqman',
-        type: 'human',
-        color: '#585CF0',
-        status: 'active',
-        permissions: ['read', 'write'],
-        last_action_at: null,
-        session_action_count: 0,
-      },
-    ],
+    agents: loadCanonicalAgentRoster(),
     agent_log: [],
     schedule: {
       phases: [
@@ -523,6 +515,20 @@ function preserveExistingState(newState, existingTracker) {
         s.completed_by = prev.completed_by
         s.priority = prev.priority || s.priority
         s.notes = prev.notes
+        s.prompt = prev.prompt ?? s.prompt
+        s.context_files = prev.context_files ?? s.context_files
+        s.reference_docs = prev.reference_docs ?? s.reference_docs
+        s.acceptance_criteria = prev.acceptance_criteria ?? s.acceptance_criteria
+        s.constraints = prev.constraints ?? s.constraints
+        s.depends_on = prev.depends_on ?? s.depends_on
+        s.agent_target = prev.agent_target ?? s.agent_target
+        s.execution_mode = prev.execution_mode ?? s.execution_mode
+        s.last_run_id = prev.last_run_id ?? s.last_run_id
+        s.pipeline = prev.pipeline ?? s.pipeline
+        s.complexity = prev.complexity ?? s.complexity
+        s.parallel_priority = prev.parallel_priority ?? s.parallel_priority
+        s.prepared = prev.prepared ?? s.prepared
+        s.audit_results = prev.audit_results ?? s.audit_results
       }
     }
   }
@@ -539,7 +545,11 @@ function preserveExistingState(newState, existingTracker) {
   }
 
   if (existing.agent_log?.length) newState.agent_log = existing.agent_log
-  if (existing.agents?.length) newState.agents = existing.agents
+  if (existing.agents?.length) {
+    newState.agents = mergeCanonicalAgentRoster(existing.agents)
+  } else {
+    newState.agents = mergeCanonicalAgentRoster(newState.agents)
+  }
 
   return newState
 }
@@ -585,13 +595,14 @@ function main() {
     console.log(`Parser/source pairing: ${parserValidation.parserSourcePairing}`)
 
     const roadmapContent = readFileSync(tasksPath, 'utf-8')
-    const checklistContent = readFileSync(checklistPath, 'utf-8')
 
     console.log(`\nRead: ${tasksPath}`)
-    console.log(`Read: ${checklistPath}`)
 
     const milestones = parseRoadmap(roadmapContent)
-    const submissionChecklist = parseChecklist(checklistContent)
+    const submissionChecklist =
+      checklistPath && existsSync(checklistPath)
+        ? (console.log(`Read: ${checklistPath}`), parseChecklist(readFileSync(checklistPath, 'utf-8')))
+        : (console.log('Read: (no submission checklist found; continuing with an empty checklist)'), { categories: [] })
 
     if (milestones.length === 0) {
       throw new Error(

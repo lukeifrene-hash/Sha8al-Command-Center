@@ -68,6 +68,54 @@ This app can read from the main TalkStore project at `TALKSTORE_ROOT` (configure
 - `docs/manifesto.md` — Product vision (loaded into task context by MCP server)
 - `talkstore-tracker.json` — Runtime state file (read/written by app)
 
+## Native Command Layer
+
+This repo now ships its own command-center-native operator playbook under:
+
+- `AGENTS.md`
+- `.claude/rules/three-phase-workflow.md`
+- `.claude/commands/*.md`
+- `.claude/agents/*.md`
+
+Those files are the repo-local convention layer that lets Codex and Claude Code execute the same milestone-driven workflow here without relying on the mirrored TalkStore playbook as the primary source.
+
+## Operator Commands
+
+The active operator command surface is milestone-driven:
+
+- `next`
+- `sweep M<N> <tier>`
+- `prepare M<N> <tier>`
+- `prepare M<N> all`
+- `prepare T<id>`
+- `build M<N> <tier>`
+- `build T<id>`
+- `auto M<N>`
+- `audit M<N>`
+
+Rare overrides:
+
+- `approve T<id>`
+- `audit T<id> --cross`
+
+The exact semantics live in `.claude/rules/three-phase-workflow.md` and `.claude/commands/*.md`.
+
+## Canonical Agents
+
+The tracker and Agent Hub now seed and normalize a canonical roster so the repo always recognizes the same orchestration identities:
+
+- `claude_code`
+- `codex`
+- `explorer`
+- `researcher`
+- `auditor`
+- `milestone-auditor`
+- `milestone-coherence-auditor`
+- `milestone-security-auditor`
+- `milestone-ux-auditor`
+- `milestone-compliance-auditor`
+- `luqman`
+
 ### Do NOT
 - Access `fs` from the renderer — use IPC via `window.api`
 - Write to tracker without JSON validation

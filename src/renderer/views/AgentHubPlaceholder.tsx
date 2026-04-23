@@ -115,15 +115,19 @@ function ConnectedAgentsPanel({ agents }: { agents: Agent[] }) {
     setCollapsedGroups(prev => ({ ...prev, [groupId]: !prev[groupId] }))
   }, [])
 
-  // Group agents: orchestrators get their sub-agents nested beneath them.
-  // Sub-agents are matched by ID prefix (e.g. claude_code_explore → claude_code).
-  // Standalone agents (human, etc.) stay at the top level.
+  // Group agents: explicit parent_id wins. Older sub-agents that only expose
+  // prefix-style IDs still fall back to orchestrator ID prefix matching.
   const grouped = useMemo(() => {
     const orchestrators = agents.filter(a => a.type.toLowerCase().includes('orchestrator'))
+    const agentById = new Map(agents.map((agent) => [agent.id, agent]))
     const orchIds = new Set(orchestrators.map(o => o.id))
+    const childMap = new Map<string, Agent[]>()
 
-    // Match sub-agents to their orchestrator by ID prefix
-    const subAgentOf = (agent: Agent): string | null => {
+    const resolveParent = (agent: Agent): string | null => {
+      if (agent.parent_id && agentById.has(agent.parent_id)) {
+        return agent.parent_id
+      }
+
       if (agent.type === 'sub-agent') {
         for (const oId of orchIds) {
           if (agent.id.startsWith(oId + '_')) return oId
@@ -133,10 +137,18 @@ function ConnectedAgentsPanel({ agents }: { agents: Agent[] }) {
     }
 
     const claimed = new Set<string>()
+    for (const agent of agents) {
+      const parentId = resolveParent(agent)
+      if (!parentId) continue
+      const siblings = childMap.get(parentId) || []
+      siblings.push(agent)
+      childMap.set(parentId, siblings)
+      claimed.add(agent.id)
+    }
+
     const groups: { id: string; orchestrator: Agent | null; children: Agent[] }[] = orchestrators.map(o => {
-      const children = agents.filter(a => subAgentOf(a) === o.id)
-      children.forEach(c => claimed.add(c.id))
       claimed.add(o.id)
+      const children = (childMap.get(o.id) || []).sort((a, b) => a.name.localeCompare(b.name))
       return { id: o.id, orchestrator: o, children }
     })
 
@@ -214,21 +226,25 @@ function AgentCardInline({ agent }: { agent: Agent }) {
 }
 
 const SUB_AGENT_ROLE_ICONS: Record<string, string> = {
-  explore: '\u{1F50D}',
-  planner: '\u{1F4D0}',
-  builder: '\u{1F528}',
+  explorer: '\u{1F50D}',
+  researcher: '\u{1F4DA}',
+  auditor: '\u{2705}',
+  'milestone-coherence-auditor': '\u{1F9E9}',
+  'milestone-security-auditor': '\u{1F510}',
+  'milestone-ux-auditor': '\u{1F5A5}',
+  'milestone-compliance-auditor': '\u{1F4CB}',
 }
 
 function getSubAgentRole(agent: Agent): string | null {
   if (agent.type !== 'sub-agent') return null
-  const parts = agent.id.split('_')
-  return parts[parts.length - 1] || null
+  return agent.name
 }
 
 function AgentCard({ agent }: { agent: Agent }) {
   const active = isAgentActive(agent)
   const role = getSubAgentRole(agent)
   const isSubAgent = agent.type === 'sub-agent'
+  const icon = SUB_AGENT_ROLE_ICONS[agent.id] || null
 
   return (
     <div className={`flex items-center gap-3 rounded-lg px-3 py-2.5 border transition-colors ${
@@ -247,11 +263,11 @@ function AgentCard({ agent }: { agent: Agent }) {
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          {role && SUB_AGENT_ROLE_ICONS[role] && (
-            <span className="text-[10px]">{SUB_AGENT_ROLE_ICONS[role]}</span>
+          {icon && (
+            <span className="text-[10px]">{icon}</span>
           )}
           <span className={`text-white font-medium ${isSubAgent ? 'text-[11px]' : 'text-xs'}`}>
-            {role ? role.charAt(0).toUpperCase() + role.slice(1) : agent.name}
+            {role || agent.name}
           </span>
           <span className={`text-[9px] font-semibold tracking-wider ${active ? 'text-on-track' : 'text-muted'}`}>
             {active ? 'ACTIVE' : 'IDLE'}
@@ -299,7 +315,7 @@ function SharedStateFileInfo({ tracker, synced, total, totalItems }: {
     let cancelled = false
     window.api.tracker.getPath()
       .then((path) => {
-        if (!cancelled) setTrackerPath(path)
+        if (!cancelled) setTrackerPath(path || 'Unavailable')
       })
       .catch(() => {
         if (!cancelled) setTrackerPath('Unavailable')

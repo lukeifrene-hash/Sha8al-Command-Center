@@ -35,9 +35,11 @@ function main() {
     'docs/public-boundary.md',
     'docs/public-naming.md',
     'docs/profile-system-design.md',
+    'docs/task-workflow.md',
     'docs/three-phase-workflow.md',
     'docs/troubleshooting.md',
     'docs/architecture-overview.md',
+    'playbooks/command-center/README.md',
     'maintainers/current/validation-matrix.md',
     'maintainers/current/oss-packaging-checklist.md',
     'maintainers/current/external-example-plan.md',
@@ -55,10 +57,12 @@ function main() {
     'Sha8al Command Center',
     'sha8al-command-center',
     'TalkStore is a compatibility profile',
+    'docs/roadmap.md',
     'npm run bootstrap -- --project',
     'examples/minimal-command-center-project',
     'tracker:parse:project-tasks:dry-run',
     'COMMAND_CENTER_ALLOW_TRACKER_WRITES',
+    'prepare M<N> all',
   ])
 
   requireIncludes('.env.example', [

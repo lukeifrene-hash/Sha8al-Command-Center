@@ -34,7 +34,7 @@ These are compatibility surfaces, not the platform identity.
 ## Safe Usage Right Now
 
 - New installs should follow the `generic` profile path and `COMMAND_CENTER_*` configuration.
-- New installs should use the public parser aliases `tracker:parse:project-tasks` and `tracker:parse:legacy-roadmap`, which resolve the public `generic-markdown` parser identity.
+- New installs should use the public parser alias `tracker:parse:project-tasks`, which resolves the public `generic-markdown` parser identity against `docs/roadmap.md`.
 - Existing TalkStore installs should keep current wiring unless they are intentionally migrating.
 - Package ids now use `sha8al-command-center` and `sha8al-command-center-mcp`.
 - The public CLI alias `sha8al-command-center` can coexist with the compatibility alias `talkstore`.

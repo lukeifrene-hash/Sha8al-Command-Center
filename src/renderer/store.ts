@@ -10,6 +10,7 @@ export type Theme = 'dark' | 'light'
 interface AppState {
   // Core data
   tracker: TrackerState | null
+  workspaceStatus: WorkspaceStatus | null
   loading: boolean
   error: string | null
   synced: boolean
@@ -20,7 +21,8 @@ interface AppState {
   theme: Theme
 
   // Actions
-  setTracker: (data: TrackerState) => void
+  setTracker: (data: TrackerState | null) => void
+  setWorkspaceStatus: (status: WorkspaceStatus | null) => void
   setActiveTab: (tab: TabId) => void
   setSelectedMilestoneId: (id: string | null) => void
   setLoading: (v: boolean) => void
@@ -148,6 +150,7 @@ function getInitialTheme(): Theme {
 
 export const useStore = create<AppState>()((set, get) => ({
   tracker: null,
+  workspaceStatus: null,
   loading: true,
   error: null,
   synced: false,
@@ -157,6 +160,7 @@ export const useStore = create<AppState>()((set, get) => ({
 
   // setTracker: used for loading/external updates — does NOT write back
   setTracker: (data) => set({ tracker: data, error: null }),
+  setWorkspaceStatus: (status) => set({ workspaceStatus: status }),
   setActiveTab: (tab) => set({ activeTab: tab }),
   setSelectedMilestoneId: (id) => set({ selectedMilestoneId: id }),
   setLoading: (v) => set({ loading: v }),
@@ -197,18 +201,22 @@ export async function initStore(): Promise<void> {
   if (initialized) return
   initialized = true
 
-  const { setTracker, setLoading, setError, setSynced } = useStore.getState()
+  const { setTracker, setWorkspaceStatus, setLoading, setError, setSynced } = useStore.getState()
 
   try {
-    const json = await window.api.tracker.read()
-    if (json) {
+    const workspaceStatus = await window.api.workspace.getStatus()
+    setWorkspaceStatus(workspaceStatus)
+
+    const json = workspaceStatus.trackerExists ? await window.api.tracker.read() : null
+    if (json && workspaceStatus.trackerExists) {
       const data = JSON.parse(json) as TrackerState
       // Patch current_week to be live-calculated
       data.project.current_week = selectCurrentWeek(data)
       setTracker(data)
       setSynced(true)
     } else {
-      setError('talkstore-tracker.json not found. Run the parser first.')
+      setTracker(null)
+      setSynced(false)
     }
   } catch (err) {
     setError(`Failed to load tracker: ${err}`)
@@ -224,8 +232,41 @@ export async function initStore(): Promise<void> {
       const data = JSON.parse(json) as TrackerState
       data.project.current_week = selectCurrentWeek(data)
       useStore.getState().setTracker(data)
+      window.api.workspace.getStatus().then((status) => useStore.getState().setWorkspaceStatus(status)).catch(() => {})
     } catch {
       // Ignore corrupt JSON
     }
   })
+}
+
+export async function refreshWorkspaceStatus(): Promise<void> {
+  const status = await window.api.workspace.getStatus()
+  useStore.getState().setWorkspaceStatus(status)
+}
+
+export async function loadTrackerFromWorkspace(): Promise<void> {
+  const { setTracker, setWorkspaceStatus, setSynced, setError } = useStore.getState()
+  const status = await window.api.workspace.getStatus()
+  setWorkspaceStatus(status)
+
+  if (!status.trackerExists) {
+    setTracker(null)
+    setSynced(false)
+    setError(null)
+    return
+  }
+
+  const json = await window.api.tracker.read()
+  if (!json) {
+    setTracker(null)
+    setSynced(false)
+    setError(null)
+    return
+  }
+
+  const data = JSON.parse(json) as TrackerState
+  data.project.current_week = selectCurrentWeek(data)
+  setTracker(data)
+  setSynced(true)
+  setError(null)
 }

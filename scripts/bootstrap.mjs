@@ -2,18 +2,21 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { basename, dirname, join, resolve } from 'path'
+import { createInterface } from 'readline/promises'
+import { scaffoldGenericStarterDocs } from './lib/bootstrap-scaffold.mjs'
 import { COMMAND_CENTER_ROOT } from './lib/project-paths.mjs'
 
 const PROFILES_ROOT = join(COMMAND_CENTER_ROOT, 'profiles')
 const SIBLING_TALKSTORE_ROOT = resolve(COMMAND_CENTER_ROOT, '..', 'talkstore')
 const DEFAULT_ENV_PATH = join(COMMAND_CENTER_ROOT, '.env')
-const PRIMARY_ENV_KEYS = [
+const MANAGED_ENV_KEYS = [
   'COMMAND_CENTER_PROFILE',
   'COMMAND_CENTER_PROJECT_ROOT',
   'COMMAND_CENTER_TRACKER_FILE',
   'COMMAND_CENTER_TASKS_DOC',
   'COMMAND_CENTER_CHECKLIST_DOC',
   'COMMAND_CENTER_MANIFESTO_DOC',
+  'TALKSTORE_PROJECT_ROOT',
 ]
 
 function loadProfileManifest(profileId) {
@@ -87,23 +90,21 @@ function printHelp() {
     '  --profile <id>            Consumer profile. Defaults to generic unless TalkStore is inferred.\n' +
     '  --output-env-file <path>  Write the generated env file to a custom path instead of ./.env.\n' +
     '  --tracker <filename>      Override the tracker filename relative to the project root.\n' +
-    '  --tasks <path>            Override the tasks document path.\n' +
+    '  --tasks <path>            Override the roadmap/task document path.\n' +
     '  --checklist <path>        Override the checklist document path.\n' +
     '  --manifesto <path>        Override the manifesto document path.\n' +
     '  -h, --help                Show this help.\n' +
     '\n' +
     'Notes:\n' +
     '  Bootstrap writes COMMAND_CENTER_* keys for fresh external installs.\n' +
+    '  Public generic installs use docs/roadmap.md because it feeds the swim lane and task board.\n' +
+    '  If docs/roadmap.md is missing, bootstrap scaffolds docs/roadmap.md and docs/manifesto.md.\n' +
     '  TALKSTORE_PROJECT_ROOT is only written when the talkstore profile is selected for compatibility.\n'
   )
 }
 
-function buildEnvLines(existing, profile) {
-  const generatedKeys = [
-    ...PRIMARY_ENV_KEYS,
-    ...(profile.id === 'talkstore' ? ['TALKSTORE_PROJECT_ROOT'] : []),
-  ]
-  const generatedKeySet = new Set(generatedKeys)
+function buildEnvLines(existing, profile, generatedKeys) {
+  const generatedKeySet = new Set(MANAGED_ENV_KEYS)
   const preservedEntries = Array.from(existing.entries()).filter(([key]) => !generatedKeySet.has(key))
 
   return [
@@ -173,62 +174,159 @@ function chooseTrackerFile(profile, projectRoot, explicitTracker) {
   return profile.tracker.default_creation_filename || profile.tracker.primary_filename
 }
 
+async function confirmRoadmapUsage(roadmapPath) {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) return true
+
+  const rl = createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  })
+
+  try {
+    const answer = await rl.question(
+      `Detected ${roadmapPath}. Use this roadmap.md for the tracker-driven flow? [Y/n] `
+    )
+    const normalized = answer.trim().toLowerCase()
+    return !normalized || normalized === 'y' || normalized === 'yes'
+  } finally {
+    rl.close()
+  }
+}
+
+async function ensureGenericStarterDocs(projectRoot) {
+  const scaffoldResult = scaffoldGenericStarterDocs(projectRoot)
+
+  if (scaffoldResult.created.length > 0) {
+    console.log('Scaffolded starter docs for the public generic flow:')
+    for (const relativePath of scaffoldResult.created) {
+      console.log(`- ${join(projectRoot, relativePath)}`)
+    }
+    console.log('Replace the starter roadmap tasks with your real milestone plan before serious build work.')
+  }
+
+  return scaffoldResult
+}
+
+async function validateGenericRoadmap(projectRoot, configuredTasksDoc, explicitTasksOverride) {
+  const expectedRoadmapPath = join(projectRoot, 'docs', 'roadmap.md')
+  const resolvedTasksDocPath = resolve(projectRoot, configuredTasksDoc)
+
+  if (resolvedTasksDocPath !== expectedRoadmapPath) {
+    throw new Error(
+      'The public generic flow requires docs/roadmap.md. ' +
+      `Received ${configuredTasksDoc}. Create docs/roadmap.md and rerun bootstrap.`
+    )
+  }
+
+  const scaffoldResult = await ensureGenericStarterDocs(projectRoot)
+
+  if (!explicitTasksOverride && !scaffoldResult.created.includes('docs/roadmap.md')) {
+    const confirmed = await confirmRoadmapUsage(expectedRoadmapPath)
+    if (!confirmed) {
+      throw new Error(
+        `Bootstrap stopped. Review or replace ${expectedRoadmapPath}, then rerun bootstrap when you are ready to use that roadmap.md file.`
+      )
+    }
+  }
+
+  return expectedRoadmapPath
+}
+
 const profileId = inferProfileId(args)
 if (profileId !== 'generic' && profileId !== 'talkstore') {
   console.error(`Unknown consumer profile "${profileId}". Expected "generic" or "talkstore".`)
   process.exit(1)
 }
 
-const profile = loadProfileManifest(profileId)
-const existing = existsSync(ENV_PATH) ? parseEnv(readFileSync(ENV_PATH, 'utf8')) : new Map()
-const resolvedProjectRoot = resolve(args.project)
-const trackerFile = chooseTrackerFile(profile, resolvedProjectRoot, args.tracker)
+async function main() {
+  const profile = loadProfileManifest(profileId)
+  const existing = existsSync(ENV_PATH) ? parseEnv(readFileSync(ENV_PATH, 'utf8')) : new Map()
+  const resolvedProjectRoot = resolve(args.project)
+  const trackerFile = chooseTrackerFile(profile, resolvedProjectRoot, args.tracker)
+  const tasksDoc = args.tasks || profile.docs.tasks.default_path
 
-existing.set('COMMAND_CENTER_PROFILE', profile.id)
-existing.set('COMMAND_CENTER_PROJECT_ROOT', resolvedProjectRoot)
-existing.set('COMMAND_CENTER_TRACKER_FILE', trackerFile)
-existing.set('COMMAND_CENTER_TASKS_DOC', args.tasks || profile.docs.tasks.default_path)
-existing.set('COMMAND_CENTER_CHECKLIST_DOC', args.checklist || profile.docs.checklist.default_path)
-existing.set('COMMAND_CENTER_MANIFESTO_DOC', args.manifesto || profile.docs.manifesto.default_path)
+  if (profile.id === 'generic') {
+    const roadmapPath = await validateGenericRoadmap(resolvedProjectRoot, tasksDoc, Boolean(args.tasks))
+    console.log(`Detected roadmap source: ${roadmapPath}`)
+    console.log('This roadmap.md file feeds the swim lane and task board.')
+  }
 
-if (profile.id === 'talkstore') {
-  existing.set('TALKSTORE_PROJECT_ROOT', resolvedProjectRoot)
-} else {
-  existing.delete('TALKSTORE_PROJECT_ROOT')
+  existing.set('COMMAND_CENTER_PROFILE', profile.id)
+  existing.set('COMMAND_CENTER_PROJECT_ROOT', resolvedProjectRoot)
+  existing.set('COMMAND_CENTER_TRACKER_FILE', trackerFile)
+  existing.set('COMMAND_CENTER_TASKS_DOC', tasksDoc)
+  const generatedKeys = [...(profile.bootstrap?.default_env_keys || [])]
+
+  if (args.checklist || profile.id === 'talkstore') {
+    existing.set('COMMAND_CENTER_CHECKLIST_DOC', args.checklist || profile.docs.checklist.default_path)
+    if (!generatedKeys.includes('COMMAND_CENTER_CHECKLIST_DOC')) {
+      generatedKeys.push('COMMAND_CENTER_CHECKLIST_DOC')
+    }
+  } else {
+    existing.delete('COMMAND_CENTER_CHECKLIST_DOC')
+  }
+
+  const manifestoPath = args.manifesto || profile.docs.manifesto.default_path
+  if (args.manifesto || profile.id === 'talkstore' || existsSync(join(resolvedProjectRoot, manifestoPath))) {
+    existing.set('COMMAND_CENTER_MANIFESTO_DOC', manifestoPath)
+    if (!generatedKeys.includes('COMMAND_CENTER_MANIFESTO_DOC')) {
+      generatedKeys.push('COMMAND_CENTER_MANIFESTO_DOC')
+    }
+  } else {
+    existing.delete('COMMAND_CENTER_MANIFESTO_DOC')
+  }
+
+  if (profile.id === 'talkstore') {
+    existing.set('TALKSTORE_PROJECT_ROOT', resolvedProjectRoot)
+    if (!generatedKeys.includes('TALKSTORE_PROJECT_ROOT')) {
+      generatedKeys.push('TALKSTORE_PROJECT_ROOT')
+    }
+  } else {
+    existing.delete('TALKSTORE_PROJECT_ROOT')
+  }
+
+  const lines = buildEnvLines(existing, profile, generatedKeys)
+
+  mkdirSync(dirname(ENV_PATH), { recursive: true })
+  writeFileSync(ENV_PATH, lines.join('\n'), 'utf8')
+
+  console.log(`Wrote ${ENV_PATH}`)
+  console.log(`Consumer profile: ${existing.get('COMMAND_CENTER_PROFILE')}`)
+  console.log(`Project root: ${existing.get('COMMAND_CENTER_PROJECT_ROOT')}`)
+  console.log(`Tracker file: ${existing.get('COMMAND_CENTER_TRACKER_FILE')}`)
+  console.log(`Tasks doc: ${existing.get('COMMAND_CENTER_TASKS_DOC')}`)
+  if (existing.has('COMMAND_CENTER_CHECKLIST_DOC')) {
+    console.log(`Checklist doc: ${existing.get('COMMAND_CENTER_CHECKLIST_DOC')}`)
+  }
+  if (existing.has('COMMAND_CENTER_MANIFESTO_DOC')) {
+    console.log(`Manifesto doc: ${existing.get('COMMAND_CENTER_MANIFESTO_DOC')}`)
+  }
+  console.log(
+    profile.id === 'talkstore'
+      ? 'Compatibility: TALKSTORE_PROJECT_ROOT was written for existing TalkStore installs.'
+      : 'Compatibility: no TalkStore-specific env keys were written.'
+  )
+  console.log('')
+  console.log('Next steps:')
+  if (ENV_PATH === DEFAULT_ENV_PATH) {
+    console.log('1. Review the generated .env if your project uses non-default file names.')
+  } else {
+    console.log(`1. Review ${ENV_PATH} and move or source it for local use.`)
+  }
+  if (profile.id === 'generic') {
+    console.log('2. Replace any starter roadmap tasks in docs/roadmap.md with your real milestone plan.')
+    console.log('3. Run `npm run tracker:guard:status` before any tracker write.')
+    console.log('4. Dry-run `npm run tracker:parse:project-tasks:dry-run` before any tracker write.')
+    console.log('5. Write only after the dry-run looks correct with `npm run tracker:parse:project-tasks`.')
+    return
+  }
+
+  console.log('2. Run `npm run tracker:guard:status` before any tracker write.')
+  console.log('3. Dry-run `npm run tracker:parse:talkstore-tasks:dry-run` before any compatibility write.')
+  console.log('4. Write only after the dry-run looks correct with `npm run tracker:parse:talkstore-tasks`.')
 }
 
-const lines = buildEnvLines(existing, profile)
-
-mkdirSync(dirname(ENV_PATH), { recursive: true })
-writeFileSync(ENV_PATH, lines.join('\n'), 'utf8')
-
-console.log(`Wrote ${ENV_PATH}`)
-console.log(`Consumer profile: ${existing.get('COMMAND_CENTER_PROFILE')}`)
-console.log(`Project root: ${existing.get('COMMAND_CENTER_PROJECT_ROOT')}`)
-console.log(`Tracker file: ${existing.get('COMMAND_CENTER_TRACKER_FILE')}`)
-console.log(`Tasks doc: ${existing.get('COMMAND_CENTER_TASKS_DOC')}`)
-console.log(`Checklist doc: ${existing.get('COMMAND_CENTER_CHECKLIST_DOC')}`)
-console.log(`Manifesto doc: ${existing.get('COMMAND_CENTER_MANIFESTO_DOC')}`)
-console.log(
-  profile.id === 'talkstore'
-    ? 'Compatibility: TALKSTORE_PROJECT_ROOT was written for existing TalkStore installs.'
-    : 'Compatibility: no TalkStore-specific env keys were written.'
-)
-console.log('')
-console.log('Next steps:')
-if (ENV_PATH === DEFAULT_ENV_PATH) {
-  console.log('1. Review the generated .env if your project uses non-default file names.')
-} else {
-  console.log(`1. Review ${ENV_PATH} and move or source it for local use.`)
-}
-console.log('2. Run `npm run tracker:guard:status` before any tracker write.')
-console.log(
-  profile.id === 'talkstore'
-    ? '3. Dry-run `npm run tracker:parse:talkstore-tasks:dry-run` before any compatibility write.'
-    : '3. Dry-run `npm run tracker:parse:project-tasks:dry-run` before any tracker write.'
-)
-console.log(
-  profile.id === 'talkstore'
-    ? '4. Write only after the dry-run looks correct with `npm run tracker:parse:talkstore-tasks`.'
-    : '4. Write only after the dry-run looks correct with `npm run tracker:parse:project-tasks`.'
-)
+main().catch((error) => {
+  console.error(`ERROR: ${error instanceof Error ? error.message : String(error)}`)
+  process.exit(1)
+})

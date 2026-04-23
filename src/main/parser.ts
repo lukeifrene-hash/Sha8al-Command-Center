@@ -3,11 +3,13 @@
  * Phase 1, Part 1.2
  *
  * Importable module for the Electron main process.
- * Reads roadmap.md and submission-checklist.md, generates talkstore-tracker.json.
+ * Reads the configured roadmap/checklist markdown sources and generates the active tracker file.
  * Re-runnable: preserves completion status of already-done items.
  */
 
 import { readFileSync, writeFileSync, existsSync } from 'fs'
+import { loadCanonicalAgentRoster, mergeCanonicalAgentRoster } from './canonical-agents'
+import { classifyTaskComplexity } from './task-complexity'
 import { QA_SEED } from '../../mcp-server/src/qa-seed.js'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -44,8 +46,8 @@ export interface Subtask {
   // Pipeline (chained agent dispatch)
   pipeline: Pipeline | null
 
-  // AI Commerce Index Platform pivot — complexity & wave scheduling.
-  // Populated by scripts/apply-dependency-analysis.mjs; consumed by TaskCard.
+  // Task sizing starts with parser heuristics and can be refined by later
+  // dependency-analysis passes. Consumed by TaskCard and MCP workflow tools.
   complexity?: 'small' | 'medium' | 'large' | 'architectural'
   parallel_priority?: number
   prepared?: boolean
@@ -134,6 +136,7 @@ export interface Agent {
   id: string
   name: string
   type: string
+  parent_id?: string
   color: string
   status: string
   permissions: string[]
@@ -557,6 +560,7 @@ export function parseRoadmap(content: string): Milestone[] {
           execution_mode: 'human',
           last_run_id: null,
           pipeline: null,
+          complexity: classifyTaskComplexity(label),
         })
       }
     }
@@ -648,28 +652,7 @@ export function generateTrackerState(
     },
     milestones,
     submission_checklist: submissionChecklist,
-    agents: [
-      {
-        id: 'claude_chat',
-        name: 'Claude (Project Chat)',
-        type: 'synchronous',
-        color: '#22c55e',
-        status: 'active',
-        permissions: ['read', 'write'],
-        last_action_at: null,
-        session_action_count: 0,
-      },
-      {
-        id: 'luqman',
-        name: 'Luqman',
-        type: 'human',
-        color: '#585CF0',
-        status: 'active',
-        permissions: ['read', 'write'],
-        last_action_at: null,
-        session_action_count: 0,
-      },
-    ],
+    agents: loadCanonicalAgentRoster(),
     agent_log: [],
     schedule: {
       phases: [
@@ -736,7 +719,12 @@ export function preserveExistingState(newState: TrackerState, existingPath: stri
         s.depends_on = prev.depends_on ?? s.depends_on
         s.agent_target = prev.agent_target
         s.execution_mode = prev.execution_mode ?? s.execution_mode
+        s.execution_mode_reasoning = prev.execution_mode_reasoning ?? s.execution_mode_reasoning
         s.last_run_id = prev.last_run_id
+        s.complexity = prev.complexity ?? s.complexity
+        s.parallel_priority = prev.parallel_priority ?? s.parallel_priority
+        s.prepared = prev.prepared ?? s.prepared
+        s.audit_results = prev.audit_results ?? s.audit_results
 
         // Pipeline state
         s.pipeline = prev.pipeline ?? null
@@ -756,7 +744,11 @@ export function preserveExistingState(newState: TrackerState, existingPath: stri
   }
 
   if (existing.agent_log?.length) newState.agent_log = existing.agent_log
-  if (existing.agents?.length) newState.agents = existing.agents
+  if (existing.agents?.length) {
+    newState.agents = mergeCanonicalAgentRoster(existing.agents)
+  } else {
+    newState.agents = mergeCanonicalAgentRoster(newState.agents)
+  }
   if ((existing as any).review_sessions?.length) newState.review_sessions = (existing as any).review_sessions
   if ((existing as any).qa) newState.qa = (existing as any).qa
 
@@ -767,12 +759,12 @@ export function preserveExistingState(newState: TrackerState, existingPath: stri
 
 export interface ParseOptions {
   roadmapPath: string
-  checklistPath: string
+  checklistPath?: string | null
   outputPath: string
 }
 
 /**
- * Parse markdown sources and generate/update talkstore-tracker.json.
+ * Parse markdown sources and generate/update the active tracker file.
  * Returns the generated state and counts for reporting.
  */
 export function parseAndGenerate(opts: ParseOptions): {
@@ -780,10 +772,12 @@ export function parseAndGenerate(opts: ParseOptions): {
   counts: { milestones: number; subtasks: number; categories: number; checklistItems: number }
 } {
   const roadmapContent = readFileSync(opts.roadmapPath, 'utf-8')
-  const checklistContent = readFileSync(opts.checklistPath, 'utf-8')
 
   const milestones = parseRoadmap(roadmapContent)
-  const submissionChecklist = parseChecklist(checklistContent)
+  const submissionChecklist =
+    opts.checklistPath && existsSync(opts.checklistPath)
+      ? parseChecklist(readFileSync(opts.checklistPath, 'utf-8'))
+      : { categories: [] }
 
   let state = generateTrackerState(milestones, submissionChecklist)
   state = preserveExistingState(state, opts.outputPath)
@@ -807,18 +801,4 @@ export function parseAndGenerate(opts: ParseOptions): {
       checklistItems: totalItems,
     },
   }
-}
-
-import {
-  TRACKER_PATH,
-  DOCS_PATHS,
-} from './config'
-
-/**
- * Default paths for the Talkstore project, resolved from config.
- */
-export const DEFAULT_PATHS: ParseOptions = {
-  roadmapPath: DOCS_PATHS.roadmap,
-  checklistPath: DOCS_PATHS.checklist,
-  outputPath: TRACKER_PATH,
 }

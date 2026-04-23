@@ -162,9 +162,21 @@ function resolveDocPath(
 }
 
 function resolveTasksPath(projectRoot: string, profile: ConsumerProfileManifest): string {
-  return resolveDocPath(projectRoot, ['COMMAND_CENTER_TASKS_DOC', 'TASKS_DOC'], [
+  const resolvedPath = resolveDocPath(projectRoot, ['COMMAND_CENTER_TASKS_DOC', 'TASKS_DOC'], [
     profile.docs.tasks.default_path,
   ])
+
+  if (profile.id === 'generic') {
+    const requiredRoadmapPath = resolveMaybeRelative(projectRoot, profile.docs.tasks.default_path)
+    if (resolve(resolvedPath) !== resolve(requiredRoadmapPath)) {
+      throw new Error(
+        `Public generic installs require ${profile.docs.tasks.default_path} as the task source. ` +
+        `Received ${resolvedPath}.`
+      )
+    }
+  }
+
+  return resolvedPath
 }
 
 function resolveOptionalDocPath(

@@ -43,7 +43,7 @@ const DEFAULT_TALKSTORE_MARKDOWN_SOURCE_FIELDS = {
     cli_keys: ['checklist-source', 'checklist-doc'],
     default_path: 'docs/submission-checklist.md',
     compatibility_paths: ['docs/submission-checklist.md'],
-    required: true,
+    required: false,
     require_explicit: false,
   },
   manifesto: {
@@ -60,8 +60,8 @@ const DEFAULT_GENERIC_MARKDOWN_SOURCE_FIELDS = {
   tasks: {
     env_keys: ['COMMAND_CENTER_TASKS_DOC', 'TASKS_DOC'],
     cli_keys: ['tasks-source', 'tasks-doc'],
-    default_path: 'docs/tasks.md',
-    compatibility_paths: ['docs/roadmap.md'],
+    default_path: 'docs/roadmap.md',
+    compatibility_paths: [],
     required: true,
     require_explicit: true,
   },
@@ -438,16 +438,16 @@ export function resolveProjectPaths(options = {}) {
   return {
     ...trackerPaths,
     tasksPath: resolveDocPath(trackerPaths.projectRoot, docs.tasks || {
-      default_path: 'docs/tasks.md',
-      compatibility_paths: ['docs/roadmap.md'],
+      default_path: 'docs/roadmap.md',
+      compatibility_paths: [],
       env_keys: ['COMMAND_CENTER_TASKS_DOC', 'TASKS_DOC'],
       required: true,
-    }, { label: 'Task list document' }),
+    }, { label: 'Roadmap document' }),
     checklistPath: resolveDocPath(trackerPaths.projectRoot, docs.checklist || {
       default_path: 'docs/submission-checklist.md',
       env_keys: ['COMMAND_CENTER_CHECKLIST_DOC', 'CHECKLIST_DOC'],
-      required: true,
-    }, { label: 'Submission checklist document' }),
+      required: false,
+    }, { label: 'Submission checklist document', optional: true }),
     manifestoPath: resolveDocPath(trackerPaths.projectRoot, docs.manifesto || {
       default_path: 'docs/manifesto.md',
       env_keys: ['COMMAND_CENTER_MANIFESTO_DOC', 'MANIFESTO_DOC'],
@@ -529,7 +529,7 @@ function resolveParserSourceFile(projectRoot, cliArgs, sourceField, options = {}
     )
   }
 
-  if (!existsSync(targetPath) && !sourceField.optional) {
+  if (!existsSync(targetPath) && sourceField.required !== false && !sourceField.optional) {
     throw new Error(`${options.label} not found at ${targetPath}.`)
   }
 
@@ -585,7 +585,7 @@ export function resolveParserProjectPaths(options = {}) {
 
     const labels = parserId === 'generic-markdown'
       ? {
-          tasks: 'Project task source document',
+          tasks: 'Project roadmap document',
           checklist: 'Project submission checklist document',
           manifesto: 'Project manifesto document',
         }

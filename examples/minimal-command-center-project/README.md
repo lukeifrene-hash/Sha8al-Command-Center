@@ -10,7 +10,7 @@ It is intentionally simple:
 
 ## Files
 
-- `docs/tasks.md`
+- `docs/roadmap.md`
 - `docs/submission-checklist.md`
 - `docs/manifesto.md`
 
@@ -25,7 +25,8 @@ npm run bootstrap -- --project ./examples/minimal-command-center-project
 That generates `.env` with:
 - `COMMAND_CENTER_PROFILE=generic`
 - `COMMAND_CENTER_PROJECT_ROOT` pointed at this example project
-- default public doc paths for tasks, checklist, and manifesto
+- `COMMAND_CENTER_TASKS_DOC=docs/roadmap.md`
+- default public doc paths for checklist and manifesto
 - no `TALKSTORE_PROJECT_ROOT` entry
 
 If you want to inspect the generated env first, add `--output-env-file /tmp/command-center.env`.
@@ -40,6 +41,7 @@ npm run tracker:parse:project-tasks:dry-run
 ```
 
 The dry-run output should include `Parser/source pairing: generic-markdown:generic`.
+The public generic path always reads `docs/roadmap.md` as the task source for the tracker.
 
 3. Write the tracker:
 

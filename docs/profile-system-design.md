@@ -24,14 +24,14 @@ The public default for fresh installs.
 Defaults:
 - project root from `COMMAND_CENTER_PROJECT_ROOT`
 - tracker file `command-center-tracker.json`
-- tasks doc `docs/tasks.md`
+- roadmap doc `docs/roadmap.md`
 - checklist doc `docs/submission-checklist.md`
 - manifesto doc `docs/manifesto.md`
-- optional roadmap doc `docs/roadmap.md`
 - public CLI alias `sha8al-command-center`
 
 Parser contract:
 - public markdown commands use parser profile `generic`
+- public tracker generation requires `docs/roadmap.md`
 - tracker metadata is stamped as `generic-markdown:generic`
 
 ### `talkstore`
@@ -65,10 +65,9 @@ Fresh external installs should always use an explicit profile.
 Each profile defines:
 - a primary tracker filename
 - accepted compatibility filenames
-- the default tasks doc path
+- the default roadmap/task source path
 - the default checklist doc path
 - the default manifesto doc path
-- an optional roadmap doc path
 
 That keeps the Electron app, MCP tools, bootstrap flow, and parser scripts in
 sync.

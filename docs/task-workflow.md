@@ -2,13 +2,15 @@
 
 This document describes the current command surface used to operate Sha8al Command Center. The workflow is milestone-driven, wave-based, and tier-aware. It is not the older task-by-task lifecycle that treated single-task transitions as the primary operator flow.
 
+For the public `generic` profile, task tiers begin with parser-side sizing from `docs/roadmap.md`, then later preparation or dependency-analysis passes can refine the plan.
+
 ## Workflow Summary
 
 The operator works through milestones with a small set of verbs:
 
 - `next`
 - `sweep M<N> <tier>`
-- `prepare M<N> <tier>` or `prepare T<id>`
+- `prepare M<N> <tier>` or `prepare M<N> all` or `prepare T<id>`
 - `build M<N> <tier>` or `build T<id>`
 - `auto M<N>`
 - `audit M<N>`
@@ -27,6 +29,7 @@ Bare-word inputs such as `next`, `sweep`, `prepare`, `build`, `auto`, and `audit
 | `next` | Show what is actionable now | First command in a session | Calls `get_next_actionable_tasks`; read-only |
 | `sweep M<N> <tier>` | Execute all unblocked tasks in one milestone tier | Usually for ready `small` work | Uses `compute_waves`, `check_file_collisions`, `claim_next_task`, `complete_task`; runs auditor for non-small work |
 | `prepare M<N> <tier>` | Enrich a milestone batch before build | Before building `medium` work | Uses `bulk_prepare`, `get_task_context`, `enrich_task`; writes builder prompts |
+| `prepare M<N> all` | Enrich every non-small task in one milestone | When you want a single prep pass across `medium`, `large`, and `architectural` work | Uses `bulk_prepare` without a tier filter, then preserves medium-vs-large prep depth per task |
 | `prepare T<id>` | Enrich one larger task | Before building a `large` or `architectural` task | Same prepare machinery, scoped to one task |
 | `build M<N> <tier>` | Build prepared milestone work | After batch prepare is done | Uses `get_task_context`, `start_task`, `complete_task`, then audit submission |
 | `build T<id>` | Build one prepared task | When one prepared task is the right unit of work | Same build path, scoped to one task |
@@ -72,7 +75,7 @@ Important behavior:
 - `sweep` stops when no more tasks of the requested tier are unblocked.
 - A common stop condition is that the next actionable work is a different tier and now needs `prepare` or `build`.
 
-## Prepare: `prepare M<N> <tier>` / `prepare T<id>`
+## Prepare: `prepare M<N> <tier>` / `prepare M<N> all` / `prepare T<id>`
 
 Use `prepare` to create implementation context before code changes begin.
 
@@ -95,6 +98,25 @@ Important behavior:
 - `prepare` does not implement code.
 - Batch prepare is rate-limited and parallelized.
 - `prepare T<id>` is the normal path for deeper `large` or `architectural` work.
+
+### `prepare M<N> all`
+
+Use `prepare M<N> all` when you want the entire non-small queue prepared in one pass.
+
+What happens:
+
+1. The command calls `bulk_prepare` without a tier filter.
+2. The returned task set is split by complexity.
+3. `medium` tasks keep the standard batched-prepare path.
+4. `large` and `architectural` tasks keep the deeper per-task prepare path.
+5. Every prepared task gets a canonical builder prompt file under `docs/prompts/M<N>/<task_id>.md`.
+
+Important behavior:
+
+- `all` is a convenience wrapper, not a flattening of task semantics.
+- `medium` stays batch-oriented and parallel-prep friendly.
+- `large` and `architectural` stay deeper and lower-concurrency.
+- the output is one fully prepared non-small milestone queue with builder prompts written for every task.
 
 ## Build: `build M<N> <tier>` / `build T<id>`
 
@@ -188,6 +210,7 @@ Use this decision guide:
 | You need to know what is unblocked | `next` |
 | Ready `small` tasks exist in the milestone | `sweep M<N> small` |
 | `medium` work is next and unprepared | `prepare M<N> medium` |
+| You want every non-small task prepared together | `prepare M<N> all` |
 | One `large` or `architectural` task is next | `prepare T<id>` |
 | Prepared work is waiting to be implemented | `build ...` |
 | You want the milestone to keep draining automatically | `auto M<N>` |

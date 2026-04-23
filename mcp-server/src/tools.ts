@@ -5,6 +5,7 @@
 
 import { readFileSync, existsSync } from 'fs'
 import { join } from 'path'
+import { getCanonicalAgent, resolveCanonicalAgentId } from './canonical-agents.js'
 import {
   readTracker,
   writeTracker,
@@ -2187,9 +2188,9 @@ function handleListAgents() {
   const weekAgo = new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString()
   lines.push('# Weekly Stats\n')
   for (const agent of state.agents) {
-    const weekEntries = state.agent_log.filter(
-      (e) => e.agent_id === agent.id && e.timestamp >= weekAgo
-    )
+    const weekEntries = state.agent_log.filter((e) => {
+      return resolveCanonicalAgentId(e.agent_id) === agent.id && e.timestamp >= weekAgo
+    })
     if (weekEntries.length === 0) continue
     const checklistCount = weekEntries.filter((e) => e.tags.includes('CHECKLIST') || e.tags.includes('checklist')).length
     const alertCount = weekEntries.filter((e) => e.tags.includes('ALERT') || e.tags.includes('alert')).length
@@ -2309,7 +2310,8 @@ function handleGetActivityFeed(agentId?: string, limit: number = 30) {
       lastDay = day
     }
 
-    const agentName = state.agents.find((a) => a.id === e.agent_id)?.name || e.agent_id
+    const agentName =
+      state.agents.find((a) => a.id === resolveCanonicalAgentId(e.agent_id))?.name || e.agent_id
     const time = new Date(e.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     lines.push(`**${time}** [${agentName}] **${e.action}** — ${e.description}`)
     if (e.target_id) lines.push(`  Target: \`${e.target_id}\``)
@@ -2326,7 +2328,17 @@ function handleGetActivityFeed(agentId?: string, limit: number = 30) {
  * Called by write tools to keep the Agent Hub's Connected Agents panel current.
  */
 function touchAgent(state: TrackerState, agentId: string = 'claude_code'): void {
-  const agent = state.agents.find((a) => a.id === agentId)
+  const resolvedAgentId = resolveCanonicalAgentId(agentId)
+  let agent = state.agents.find((a) => a.id === resolvedAgentId)
+
+  if (!agent) {
+    const canonicalAgent = getCanonicalAgent(resolvedAgentId)
+    if (canonicalAgent) {
+      agent = { ...canonicalAgent }
+      state.agents.push(agent)
+    }
+  }
+
   if (agent) {
     agent.last_action_at = new Date().toISOString()
     agent.session_action_count += 1

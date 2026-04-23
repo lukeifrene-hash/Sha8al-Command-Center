@@ -6,7 +6,7 @@ const PARSER_PAIRINGS = {
     parserProfile: 'generic',
     sourceFields: [
       { key: 'tasks', pathKey: 'tasksPath', metadataKey: 'tasks_source' },
-      { key: 'checklist', pathKey: 'checklistPath', metadataKey: 'checklist_source' },
+      { key: 'checklist', pathKey: 'checklistPath', metadataKey: 'checklist_source', optional: true },
       { key: 'manifesto', pathKey: 'manifestoPath', metadataKey: 'manifesto_source', optional: true },
     ],
   },

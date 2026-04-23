@@ -1,16 +1,32 @@
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain } from 'electron'
 import path from 'path'
 import fs from 'fs'
-import { TRACKER_PATH } from './config'
+
+import { mergeCanonicalAgentRoster } from './canonical-agents'
 import { commitAndPush } from './git'
+import {
+  configureWorkspace,
+  createStarterRoadmap,
+  generateTrackerForWorkspace,
+  getWorkspaceStatus,
+  importRoadmap,
+} from './workspace'
 
 let mainWindow: BrowserWindow | null = null
 let fileWatcher: fs.FSWatcher | null = null
+let watchedTrackerPath: string | null = null
 let lastWriteTime = 0
 
-function readTrackerFile(): string | null {
+function readTrackerFile(trackerPath: string | null): string | null {
+  if (!trackerPath) return null
+
   try {
-    return fs.readFileSync(TRACKER_PATH, 'utf-8')
+    const raw = fs.readFileSync(trackerPath, 'utf-8')
+    const parsed = JSON.parse(raw)
+    if (Array.isArray(parsed.agents)) {
+      parsed.agents = mergeCanonicalAgentRoster(parsed.agents)
+    }
+    return JSON.stringify(parsed, null, 2)
   } catch {
     return null
   }
@@ -44,64 +60,145 @@ function createWindow(): void {
   }
 }
 
-function startFileWatcher(): void {
-  if (fileWatcher) return
+function stopFileWatcher(): void {
+  if (fileWatcher) {
+    fileWatcher.close()
+    fileWatcher = null
+  }
+  watchedTrackerPath = null
+}
+
+async function restartFileWatcher(): Promise<void> {
+  stopFileWatcher()
+
+  const status = await getWorkspaceStatus()
+  if (!status.trackerExists || !status.trackerPath) return
 
   try {
-    fileWatcher = fs.watch(TRACKER_PATH, (eventType) => {
-      if (eventType === 'change') {
-        // Skip if we just wrote (500ms store debounce + margin)
-        if (Date.now() - lastWriteTime < 1000) return
+    watchedTrackerPath = status.trackerPath
+    fileWatcher = fs.watch(status.trackerPath, (eventType) => {
+      if (eventType !== 'change') return
+      if (Date.now() - lastWriteTime < 1000) return
 
-        const content = readTrackerFile()
-        if (content && mainWindow) {
-          try {
-            JSON.parse(content) // Validate before sending
-            mainWindow.webContents.send('tracker:updated', content)
-          } catch {
-            // Corrupt JSON — skip
-          }
-        }
+      const content = readTrackerFile(watchedTrackerPath)
+      if (content && mainWindow) {
+        mainWindow.webContents.send('tracker:updated', content)
       }
     })
   } catch {
-    // File might not exist yet
+    stopFileWatcher()
   }
 }
 
 // ─── IPC Handlers ────────────────────────────────────────────────────────────
 
-ipcMain.handle('tracker:read', () => {
-  return readTrackerFile()
+ipcMain.handle('tracker:read', async () => {
+  const status = await getWorkspaceStatus()
+  return status.trackerExists ? readTrackerFile(status.trackerPath) : null
 })
 
-ipcMain.handle('tracker:write', (_event, jsonString: string) => {
+ipcMain.handle('tracker:write', async (_event, jsonString: string) => {
+  const status = await getWorkspaceStatus()
+  if (!status.trackerPath) {
+    return { success: false, error: 'No active tracker path is configured yet.' }
+  }
+
   try {
-    JSON.parse(jsonString) // Validate
+    JSON.parse(jsonString)
     lastWriteTime = Date.now()
-    fs.writeFileSync(TRACKER_PATH, jsonString, 'utf-8')
+    fs.writeFileSync(status.trackerPath, jsonString, 'utf-8')
+    await restartFileWatcher()
     return { success: true }
   } catch (err) {
     return { success: false, error: String(err) }
   }
 })
 
-ipcMain.handle('tracker:path', () => {
-  return TRACKER_PATH
+ipcMain.handle('tracker:path', async () => {
+  const status = await getWorkspaceStatus()
+  return status.trackerPath
 })
 
-ipcMain.handle('tracker:fileInfo', () => {
+ipcMain.handle('tracker:fileInfo', async () => {
+  const status = await getWorkspaceStatus()
+  if (!status.trackerPath || !status.trackerExists) {
+    return { exists: false, size: 0, lastModified: null, watcherActive: false }
+  }
+
   try {
-    const stat = fs.statSync(TRACKER_PATH)
+    const stat = fs.statSync(status.trackerPath)
     return {
       exists: true,
       size: stat.size,
       lastModified: stat.mtime.toISOString(),
-      watcherActive: fileWatcher !== null,
+      watcherActive: fileWatcher !== null && watchedTrackerPath === status.trackerPath,
     }
   } catch {
     return { exists: false, size: 0, lastModified: null, watcherActive: false }
   }
+})
+
+ipcMain.handle('workspace:getStatus', async () => {
+  return getWorkspaceStatus()
+})
+
+ipcMain.handle('workspace:chooseProjectFolder', async () => {
+  if (!mainWindow) {
+    return { canceled: true, status: await getWorkspaceStatus() }
+  }
+
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ['openDirectory', 'createDirectory'],
+  })
+
+  if (result.canceled || result.filePaths.length === 0) {
+    return { canceled: true, status: await getWorkspaceStatus() }
+  }
+
+  const status = configureWorkspace(result.filePaths[0])
+  await restartFileWatcher()
+  return { canceled: false, status }
+})
+
+ipcMain.handle('workspace:createStarterRoadmap', async () => {
+  const status = await getWorkspaceStatus()
+  if (!status.projectRoot) {
+    throw new Error('Choose a project folder before creating a roadmap.')
+  }
+
+  const result = createStarterRoadmap(status.projectRoot)
+  await restartFileWatcher()
+  return result
+})
+
+ipcMain.handle('workspace:importRoadmap', async () => {
+  const status = await getWorkspaceStatus()
+  if (!status.projectRoot || !mainWindow) {
+    throw new Error('Choose a project folder before importing a roadmap.')
+  }
+
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ['openFile'],
+    filters: [
+      { name: 'Markdown', extensions: ['md', 'markdown'] },
+      { name: 'All files', extensions: ['*'] },
+    ],
+  })
+
+  if (result.canceled || result.filePaths.length === 0) {
+    return { canceled: true, status }
+  }
+
+  const imported = importRoadmap(status.projectRoot, result.filePaths[0])
+  await restartFileWatcher()
+  return { canceled: false, ...imported }
+})
+
+ipcMain.handle('workspace:generateTracker', async () => {
+  const status = await getWorkspaceStatus()
+  const result = generateTrackerForWorkspace(status)
+  await restartFileWatcher()
+  return result
 })
 
 ipcMain.handle('git:commit-and-push', async () => {
@@ -110,9 +207,9 @@ ipcMain.handle('git:commit-and-push', async () => {
 
 // ─── App Lifecycle ───────────────────────────────────────────────────────────
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   createWindow()
-  startFileWatcher()
+  await restartFileWatcher()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -128,8 +225,5 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', () => {
-  if (fileWatcher) {
-    fileWatcher.close()
-    fileWatcher = null
-  }
+  stopFileWatcher()
 })

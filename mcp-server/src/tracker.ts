@@ -6,6 +6,7 @@
 import { readFileSync, writeFileSync, existsSync } from 'fs'
 import { basename, join, dirname, isAbsolute, resolve } from 'path'
 import { fileURLToPath } from 'url'
+import { mergeCanonicalAgentRoster } from './canonical-agents.js'
 
 // ─── Types (mirrored from parser.ts) ────────────────────────────────────────
 
@@ -432,9 +433,21 @@ function resolveDocPath(projectRoot: string, envKeys: string[], candidates: stri
 }
 
 function resolveTasksPath(projectRoot: string, profile: ConsumerProfileManifest): string {
-  return resolveDocPath(projectRoot, ['COMMAND_CENTER_TASKS_DOC', 'TASKS_DOC'], [
+  const resolvedPath = resolveDocPath(projectRoot, ['COMMAND_CENTER_TASKS_DOC', 'TASKS_DOC'], [
     profile.docs.tasks.default_path,
   ])
+
+  if (profile.id === 'generic') {
+    const requiredRoadmapPath = resolveMaybeRelative(projectRoot, profile.docs.tasks.default_path)
+    if (resolve(resolvedPath) !== resolve(requiredRoadmapPath)) {
+      throw new Error(
+        `Public generic installs require ${profile.docs.tasks.default_path} as the task source. ` +
+        `Received ${resolvedPath}.`
+      )
+    }
+  }
+
+  return resolvedPath
 }
 
 function resolveOptionalDocPath(
@@ -485,6 +498,7 @@ export function readTracker(): TrackerState {
   if (!state.review_sessions) state.review_sessions = []
   // Auto-initialize qa if missing (backwards compat)
   if (!state.qa) state.qa = { groups: [] }
+  state.agents = mergeCanonicalAgentRoster(state.agents || [])
   return state
 }
 
@@ -495,6 +509,7 @@ export function writeTracker(state: TrackerState): void {
     (s, m) => s + m.subtasks.filter((t) => t.done).length, 0
   )
   state.project.overall_progress = total > 0 ? parseFloat((done / total).toFixed(4)) : 0
+  state.agents = mergeCanonicalAgentRoster(state.agents || [])
 
   writeFileSync(TRACKER_PATH, JSON.stringify(state, null, 2), 'utf-8')
 }

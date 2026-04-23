@@ -1,0 +1,116 @@
+[
+  {
+    "id": "luqman",
+    "name": "Luqman",
+    "type": "human",
+    "color": "#585CF0",
+    "status": "active",
+    "permissions": ["read", "write"],
+    "last_action_at": null,
+    "session_action_count": 0
+  },
+  {
+    "id": "claude_code",
+    "name": "Claude Code",
+    "type": "orchestrator",
+    "color": "#22C55E",
+    "status": "active",
+    "permissions": ["read", "write", "mcp"],
+    "last_action_at": null,
+    "session_action_count": 0
+  },
+  {
+    "id": "codex",
+    "name": "Codex",
+    "type": "orchestrator",
+    "color": "#38BDF8",
+    "status": "active",
+    "permissions": ["read", "write", "mcp"],
+    "last_action_at": null,
+    "session_action_count": 0
+  },
+  {
+    "id": "explorer",
+    "name": "Explorer",
+    "type": "sub-agent",
+    "color": "#F59E0B",
+    "status": "idle",
+    "permissions": ["read", "mcp", "investigate"],
+    "last_action_at": null,
+    "session_action_count": 0
+  },
+  {
+    "id": "researcher",
+    "name": "Researcher",
+    "type": "sub-agent",
+    "color": "#A855F7",
+    "status": "idle",
+    "permissions": ["read", "web", "mcp"],
+    "last_action_at": null,
+    "session_action_count": 0
+  },
+  {
+    "id": "auditor",
+    "name": "Auditor",
+    "type": "sub-agent",
+    "color": "#EF4444",
+    "status": "idle",
+    "permissions": ["read", "mcp", "audit"],
+    "last_action_at": null,
+    "session_action_count": 0
+  },
+  {
+    "id": "milestone-auditor",
+    "name": "Milestone Auditor",
+    "type": "orchestrator",
+    "color": "#FB7185",
+    "status": "idle",
+    "permissions": ["read", "write", "mcp", "audit"],
+    "last_action_at": null,
+    "session_action_count": 0
+  },
+  {
+    "id": "milestone-coherence-auditor",
+    "name": "Coherence Auditor",
+    "type": "sub-agent",
+    "parent_id": "milestone-auditor",
+    "color": "#14B8A6",
+    "status": "idle",
+    "permissions": ["read", "mcp", "audit"],
+    "last_action_at": null,
+    "session_action_count": 0
+  },
+  {
+    "id": "milestone-security-auditor",
+    "name": "Security Auditor",
+    "type": "sub-agent",
+    "parent_id": "milestone-auditor",
+    "color": "#F97316",
+    "status": "idle",
+    "permissions": ["read", "mcp", "audit"],
+    "last_action_at": null,
+    "session_action_count": 0
+  },
+  {
+    "id": "milestone-ux-auditor",
+    "name": "UX Auditor",
+    "type": "sub-agent",
+    "parent_id": "milestone-auditor",
+    "color": "#06B6D4",
+    "status": "idle",
+    "permissions": ["read", "mcp", "audit"],
+    "last_action_at": null,
+    "session_action_count": 0
+  },
+  {
+    "id": "milestone-compliance-auditor",
+    "name": "Compliance Auditor",
+    "type": "sub-agent",
+    "parent_id": "milestone-auditor",
+    "color": "#EAB308",
+    "status": "idle",
+    "permissions": ["read", "mcp", "audit"],
+    "last_action_at": null,
+    "session_action_count": 0
+  }
+]

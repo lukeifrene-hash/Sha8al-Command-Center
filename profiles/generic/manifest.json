@@ -18,7 +18,7 @@
   },
   "docs": {
     "tasks": {
-      "default_path": "docs/tasks.md",
+      "default_path": "docs/roadmap.md",
       "compatibility_paths": [],
       "env_keys": ["COMMAND_CENTER_TASKS_DOC", "TASKS_DOC"],
       "cli_keys": ["tasks-source", "tasks-doc"],
@@ -29,17 +29,13 @@
       "compatibility_paths": [],
       "env_keys": ["COMMAND_CENTER_CHECKLIST_DOC", "CHECKLIST_DOC"],
       "cli_keys": ["checklist-source", "checklist-doc"],
-      "required": true
+      "required": false
     },
     "manifesto": {
       "default_path": "docs/manifesto.md",
       "compatibility_paths": [],
       "env_keys": ["COMMAND_CENTER_MANIFESTO_DOC", "MANIFESTO_DOC"],
       "cli_keys": ["manifesto-source", "manifesto-doc"],
-      "required": false
-    },
-    "roadmap_optional": {
-      "default_path": "docs/roadmap.md",
       "required": false
     }
   },
@@ -49,8 +45,8 @@
       "parser_ids": ["generic-markdown"],
       "source_fields": {
         "tasks": {
-          "default_path": "docs/tasks.md",
-          "compatibility_paths": ["docs/roadmap.md"],
+          "default_path": "docs/roadmap.md",
+          "compatibility_paths": [],
           "env_keys": ["COMMAND_CENTER_TASKS_DOC", "TASKS_DOC"],
           "cli_keys": ["tasks-source", "tasks-doc"],
           "required": true,
@@ -61,7 +57,7 @@
           "compatibility_paths": [],
           "env_keys": ["COMMAND_CENTER_CHECKLIST_DOC", "CHECKLIST_DOC"],
           "cli_keys": ["checklist-source", "checklist-doc"],
-          "required": true,
+          "required": false,
           "require_explicit": false
         },
         "manifesto": {
@@ -81,7 +77,6 @@
       "COMMAND_CENTER_PROJECT_ROOT",
       "COMMAND_CENTER_TRACKER_FILE",
       "COMMAND_CENTER_TASKS_DOC",
-      "COMMAND_CENTER_CHECKLIST_DOC",
       "COMMAND_CENTER_MANIFESTO_DOC"
     ],
     "compatibility_env_keys": []

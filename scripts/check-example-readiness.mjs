@@ -35,7 +35,7 @@ function main() {
   }
 
   requireFile('README.md')
-  requireFile('docs/tasks.md')
+  requireFile('docs/roadmap.md')
   requireFile('docs/submission-checklist.md')
   requireFile('docs/manifesto.md')
 
@@ -44,16 +44,17 @@ function main() {
     'sha8al-command-center',
     'public `generic` profile path first',
     'bootstrap, parser, tracker, and dashboard flow',
+    'docs/roadmap.md',
     'tracker:parse:project-tasks',
     'should not require `TALKSTORE_PROJECT_ROOT`',
     'sibling TalkStore checkout',
   ])
 
-  requireIncludes('docs/tasks.md', [
+  requireIncludes('docs/roadmap.md', [
     'WEEK 1',
     'bootstrap',
-    'COMMAND_CENTER_PROFILE=generic',
-    'Generate the tracker file from the example docs',
+    'docs/roadmap.md',
+    'Generate the tracker file from `docs/roadmap.md`',
   ])
 
   requireIncludes('docs/submission-checklist.md', [

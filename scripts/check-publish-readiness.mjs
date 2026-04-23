@@ -11,6 +11,7 @@ const checks = [
   { label: 'Parser/profile mismatch', script: 'scripts/check-parser-profile-mismatch.mjs' },
   { label: 'Backup behavior', script: 'scripts/check-backup-behavior.mjs' },
   { label: 'Bootstrap path', script: 'scripts/check-external-example-bootstrap.mjs' },
+  { label: 'Bootstrap scaffold', script: 'scripts/check-bootstrap-scaffold.mjs' },
   { label: 'Public repo readiness', script: 'scripts/check-public-repo-readiness.mjs' },
 ]
 

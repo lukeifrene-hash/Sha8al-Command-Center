@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'child_process'
-import { existsSync, readFileSync } from 'fs'
+import { cpSync, existsSync, readFileSync } from 'fs'
 import { join } from 'path'
-import { REPO_ROOT, assert, runNode, tempDir } from './check-support.mjs'
+import { REPO_ROOT, assert, readJson, runNode, tempDir } from './check-support.mjs'
 
 function parseEnvText(content) {
   const values = {}
@@ -25,7 +25,7 @@ function main() {
   const exampleRoot = join(REPO_ROOT, 'examples/minimal-command-center-project')
   const envPath = join(workspace, 'bootstrap.env')
 
-  runNode(
+  const bootstrapResult = runNode(
     [
       'scripts/bootstrap.mjs',
       '--output-env-file',
@@ -42,14 +42,15 @@ function main() {
       label: 'bootstrap example project',
     }
   )
+  assert((bootstrapResult.stdout || '').includes('Detected roadmap source:'), 'bootstrap should announce the detected roadmap source')
+  assert((bootstrapResult.stdout || '').includes('feeds the swim lane and task board'), 'bootstrap should explain why roadmap.md is required for the public flow')
 
   assert(existsSync(envPath), 'bootstrap should create the requested env file')
   const envText = readFileSync(envPath, 'utf8')
   assert(envText.includes('COMMAND_CENTER_PROFILE=generic'), 'bootstrap should write the explicit generic consumer profile')
   assert(envText.includes(`COMMAND_CENTER_PROJECT_ROOT=${exampleRoot}`), 'bootstrap should write the example project root')
   assert(envText.includes('COMMAND_CENTER_TRACKER_FILE=command-center-tracker.json'), 'bootstrap should write the explicit tracker filename')
-  assert(envText.includes('COMMAND_CENTER_TASKS_DOC=docs/tasks.md'), 'bootstrap should write the task doc path')
-  assert(envText.includes('COMMAND_CENTER_CHECKLIST_DOC=docs/submission-checklist.md'), 'bootstrap should write the checklist doc path')
+  assert(envText.includes('COMMAND_CENTER_TASKS_DOC=docs/roadmap.md'), 'bootstrap should write the roadmap doc path')
   assert(envText.includes('COMMAND_CENTER_MANIFESTO_DOC=docs/manifesto.md'), 'bootstrap should write the manifesto doc path')
   assert(!envText.includes('TALKSTORE_PROJECT_ROOT='), 'bootstrap should not require TalkStore-specific env on the external example path')
 
@@ -87,6 +88,51 @@ function main() {
   assert((parseResult.stdout || '').includes('[dry-run] NOT writing tracker'), 'parser dry-run should not write the tracker')
   assert((parseResult.stdout || '').includes('Parser/source pairing: generic-markdown:generic'), 'public parser alias should resolve the generic markdown parser identity')
   assert((parseResult.stdout || '').includes(`Output: ${join(exampleRoot, 'command-center-tracker.json')}`), 'parser dry-run should resolve the external tracker path')
+
+  const copiedExampleRoot = join(workspace, 'copied-example')
+  cpSync(exampleRoot, copiedExampleRoot, { recursive: true })
+
+  const copiedEnvPath = join(workspace, 'copied-bootstrap.env')
+  runNode(
+    [
+      'scripts/bootstrap.mjs',
+      '--output-env-file',
+      copiedEnvPath,
+      '--project',
+      copiedExampleRoot,
+    ],
+    {
+      cwd: REPO_ROOT,
+      env: {
+        COMMAND_CENTER_PROFILE: 'generic',
+      },
+      expectStatus: 0,
+      label: 'bootstrap copied example project',
+    }
+  )
+
+  const copiedBootstrapEnv = parseEnvText(readFileSync(copiedEnvPath, 'utf8'))
+  runNode(
+    ['scripts/parse-markdown.mjs', '--consumer-profile=generic', '--profile=generic', '--tasks-source=docs/roadmap.md'],
+    {
+      cwd: REPO_ROOT,
+      env: copiedBootstrapEnv,
+      expectStatus: 0,
+      label: 'write tracker for copied example project',
+    }
+  )
+
+  const writtenTrackerPath = join(copiedExampleRoot, 'command-center-tracker.json')
+  const writtenTracker = readJson(writtenTrackerPath)
+  const complexities = new Set()
+  for (const milestone of writtenTracker.milestones || []) {
+    for (const task of milestone.subtasks || []) {
+      complexities.add(task.complexity)
+    }
+  }
+
+  assert(complexities.size > 0, 'written external example tracker should include task complexity values')
+  assert(!complexities.has(undefined), 'written external example tracker should classify every task by complexity')
 
   console.log('external example bootstrap checks passed')
   console.log(`workspace: ${workspace}`)

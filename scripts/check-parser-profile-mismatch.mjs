@@ -21,7 +21,8 @@ function makeTalkstoreFixture(root) {
 
 function makeGenericFixture(root) {
   ensureDir(join(root, 'docs'))
-  writeText(join(root, 'docs/tasks.md'), '# THE BUILD ROADMAP\n\n### WEEK 1 - Example\n- [ ] Example task\n')
+  writeText(join(root, 'docs/roadmap.md'), '# THE BUILD ROADMAP\n\n### WEEK 1 - Example\n- [ ] Example task\n')
+  writeText(join(root, 'docs/tasks.md'), '# THE BUILD ROADMAP\n\n### WEEK 1 - Legacy Example\n- [ ] Legacy task path\n')
   writeText(join(root, 'docs/submission-checklist.md'), '## 1. OAuth + Auth\n- ⬜ Example checklist item\n')
   writeText(join(root, 'docs/manifesto.md'), '# Example manifesto\n')
   writeJson(join(root, 'command-center-tracker.json'), {
@@ -29,11 +30,11 @@ function makeGenericFixture(root) {
       parser_profile: 'talkstore',
       parser_id: 'talkstore-markdown',
       parser_source_pairing: 'talkstore-markdown:talkstore',
-      tasks_source: 'docs/tasks.md',
+      tasks_source: 'docs/roadmap.md',
       checklist_source: 'docs/submission-checklist.md',
       manifesto_source: 'docs/manifesto.md',
       source_files: {
-        tasks: 'docs/tasks.md',
+        tasks: 'docs/roadmap.md',
         checklist: 'docs/submission-checklist.md',
         manifesto: 'docs/manifesto.md',
       },
@@ -145,7 +146,6 @@ async function main() {
       '--consumer-profile=generic',
       '--profile=generic',
       '--tasks-source=docs/not-a-source.md',
-      '--checklist-source=docs/submission-checklist.md',
       '--dry-run',
     ],
     {
@@ -158,15 +158,34 @@ async function main() {
       label: 'parse-markdown generic source mismatch',
     }
   )
-  assertFailure(sourceMismatchGeneric, 'Project task source document for parser "generic-markdown" with profile "generic" must resolve')
+  assertFailure(sourceMismatchGeneric, 'Project roadmap document for parser "generic-markdown" with profile "generic" must resolve')
+
+  const legacyTasksPathRejected = runNode(
+    [
+      'scripts/parse-markdown.mjs',
+      '--consumer-profile=generic',
+      '--profile=generic',
+      '--tasks-source=docs/tasks.md',
+      '--dry-run',
+    ],
+    {
+      cwd: REPO_ROOT,
+      env: {
+        COMMAND_CENTER_PROJECT_ROOT: genericRoot,
+        COMMAND_CENTER_TRACKER_FILE: 'command-center-tracker.json',
+      },
+      expectStatus: 1,
+      label: 'parse-markdown legacy tasks path rejected',
+    }
+  )
+  assertFailure(legacyTasksPathRejected, 'must resolve to docs/roadmap.md')
 
   const legacyGenericMigration = runNode(
     [
       'scripts/parse-markdown.mjs',
       '--consumer-profile=generic',
       '--profile=generic',
-      '--tasks-source=docs/tasks.md',
-      '--checklist-source=docs/submission-checklist.md',
+      '--tasks-source=docs/roadmap.md',
       '--dry-run',
     ],
     {

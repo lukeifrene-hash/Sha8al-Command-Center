@@ -14,6 +14,7 @@ The modern flow is built around these commands:
 - `audit`
 
 These commands operate on a dependency graph, not on isolated tasks. The tracker records task state, dependencies, lane, and audit status; the commands are the operator surface for moving that graph forward.
+For the public `generic` profile, those task tiers start with automatic sizing from `docs/roadmap.md`.
 
 ## Phase 1: Surface And Drain Ready Work
 
@@ -40,6 +41,7 @@ This phase handles work that needs explicit context before implementation.
 Commands:
 
 - `prepare M<N> <tier>`
+- `prepare M<N> all`
 - `prepare T<id>`
 - `build M<N> <tier>`
 - `build T<id>`
@@ -56,6 +58,8 @@ This phase is the normal path for:
 - `medium`
 - `large`
 - `architectural`
+
+`prepare M<N> all` is the convenience wrapper for preparing every non-small task in a milestone while keeping medium tasks batch-oriented and large or architectural tasks deeper and lower-concurrency.
 
 ## Phase 3: Autonomous Drain And Milestone Audit
 
@@ -81,7 +85,7 @@ What happens:
 | --- | --- | --- |
 | `next` | Show the current actionable queue | None; read-only |
 | `sweep` | Drain one milestone tier wave by wave | No more unblocked work of that tier |
-| `prepare` | Enrich medium and larger work before implementation | Prepare completed for the target scope |
+| `prepare` | Enrich medium and larger work before implementation, including milestone-wide `all` prep | Prepare completed for the target scope |
 | `build` | Execute prepared work and trigger audit | Build or audit failure, or batch completion |
 | `auto` | Continue milestone execution until a natural checkpoint | Human/pair task, unprepared higher-tier task, review stop, audit failure, no unblocked work, or task cap |
 | `audit` | Run milestone-level audit after execution is done | Milestone not ready or audit completion |
@@ -157,6 +161,7 @@ These are not workflow bugs. They are the normal checkpoints that hand control b
 | Need the current queue | `next` |
 | Ready `small` work exists | `sweep M<N> small` |
 | `medium` work is next and unprepared | `prepare M<N> medium` |
+| You want every non-small task prepared together | `prepare M<N> all` |
 | One `large` or `architectural` task is next | `prepare T<id>` |
 | Prepared work is waiting | `build ...` |
 | You want autonomous multi-wave progress | `auto M<N>` |

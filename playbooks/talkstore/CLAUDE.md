@@ -46,7 +46,7 @@ Full spec at `.claude/rules/three-phase-workflow.md`.
 |---|---|---|
 | `/next` | `next` | Shows unblocked tasks, grouped by complexity |
 | `/sweep M<N> <tier>` | `sweep M<N> <tier>` | Auto-executes all unblocked tasks of that tier in M<N>, walks waves, auditor handles approvals |
-| `/prepare M<N> <tier>` *or* `/prepare T<id>` | `prepare ...` | Spawns Explorer + Researcher sub-agents to enrich task prompts; no code |
+| `/prepare M<N> <tier>` *or* `/prepare M<N> all` *or* `/prepare T<id>` | `prepare ...` | Spawns Explorer + Researcher sub-agents, writes `docs/prompts/M<N>/<task_id>.md`, stores that path as `builder_prompt`; `all` prepares every non-small task in the milestone while preserving medium-vs-large prep depth; no code |
 | `/build T<id>` *or* `/build M<N> <tier>` | `build ...` | Executes prepared task(s); auditor runs post-build |
 | `/auto M<N>` | `auto M<N>` | Autonomous multi-wave execution — composes `sweep` + `build` across waves until a natural stop (audit fail / pair task / merchant-facing review / no unblocked work). Best for backend-lane milestones (M1–M6). |
 | `/audit M<N>` | `audit M<N>` | Milestone-level audit (4 specialist sub-agents: Coherence / Security / UX / Compliance) |

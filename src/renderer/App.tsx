@@ -7,9 +7,10 @@ import { TaskBoard } from './views/TaskBoard'
 import { AgentHubPlaceholder } from './views/AgentHubPlaceholder'
 import { CalendarView } from './views/CalendarView'
 import { QAView } from './views/QAView'
+import { OnboardingView } from './views/OnboardingView'
 
 export default function App() {
-  const { loading, error, activeTab, tracker, theme } = useStore()
+  const { loading, activeTab, tracker, theme } = useStore()
 
   useEffect(() => {
     initStore().catch(err => console.error('Failed to initialize store:', err))
@@ -31,21 +32,8 @@ export default function App() {
     )
   }
 
-  if (error || !tracker) {
-    return (
-      <div className="h-screen bg-dark flex items-center justify-center">
-        <div className="text-center max-w-md">
-          <div className="text-3xl mb-4">⚠</div>
-          <h2 className="text-lg font-semibold text-white mb-2">No Tracker Found</h2>
-          <p className="text-sm text-muted font-mono">
-            {error || 'Tracker file not found.'}
-          </p>
-          <p className="text-sm text-muted mt-2">
-            Run <code className="text-accent font-mono">npm run tracker:parse</code> to generate it.
-          </p>
-        </div>
-      </div>
-    )
+  if (!tracker) {
+    return <OnboardingView />
   }
 
   return (
