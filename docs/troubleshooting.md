@@ -52,3 +52,19 @@ If `tracker:guard:status` resolves the live sibling TalkStore tracker, script-si
 - `sha8al-command-center` is the public CLI alias.
 - `talkstore` is the compatibility alias.
 - During the transition window, both names can coexist without implying that TalkStore is the platform identity.
+
+## `node dist/cli.js help` fails on a fresh install
+
+- Current workaround:
+
+```bash
+cd mcp-server
+COMMAND_CENTER_PROFILE=generic \
+COMMAND_CENTER_PROJECT_ROOT=/absolute/path/to/your-project \
+node dist/cli.js help
+```
+
+- Why this happens:
+  - the CLI currently loads the tracker layer before printing help
+  - on a clean external install, that tracker layer needs a project root
+- This is a CLI-help bug, not a requirement for the Electron app onboarding flow.
