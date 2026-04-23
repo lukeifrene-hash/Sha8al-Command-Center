@@ -15,7 +15,6 @@
 
 import { readFileSync } from 'fs'
 import { basename } from 'path'
-import { handleTool } from './tools.js'
 
 function parseArgs(args: string[]): { command: string; positional: string[]; flags: Record<string, string> } {
   const command = args[0] || 'help'
@@ -420,6 +419,7 @@ async function run() {
       process.exit(1)
   }
 
+  const { handleTool } = await import('./tools.js')
   const result = await handleTool(toolName, toolArgs)
 
   // Print output
