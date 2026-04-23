@@ -132,12 +132,8 @@ Build the MCP package and inspect local CLI help:
 ```bash
 cd mcp-server
 npm run build
-COMMAND_CENTER_PROFILE=generic \
-COMMAND_CENTER_PROJECT_ROOT=/absolute/path/to/your-project \
 node dist/cli.js help
 ```
-
-On a clean external install, the local CLI currently expects a project root even for `help`. Point it at your project first, then run the command above.
 
 ## Profiles
 
