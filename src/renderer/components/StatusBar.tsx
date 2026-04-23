@@ -1,5 +1,68 @@
+import { useState, useRef, useEffect } from 'react'
 import { useStore, selectCurrentWeek, selectCurrentPhase, selectTotalSubtasks, selectDoneSubtasks, selectOverallProgress, selectScheduleStatus } from '../store'
 import { CommitButton } from './CommitButton'
+
+function ProjectMenu() {
+  const [open, setOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setOpen(false)
+      }
+    }
+    if (open) document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [open])
+
+  async function handleSwitchProject() {
+    setOpen(false)
+    const result = await window.api.workspace.chooseProjectFolder()
+    if (!result.canceled) {
+      window.location.reload()
+    }
+  }
+
+  async function handleImportRoadmap() {
+    setOpen(false)
+    const result = await window.api.workspace.importRoadmap()
+    if (!result.canceled) {
+      window.location.reload()
+    }
+  }
+
+  return (
+    <div className="relative" ref={menuRef} style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex items-center justify-center w-6 h-6 rounded hover:bg-muted/20 transition-colors text-muted hover:text-primary-text"
+        title="Project Settings"
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+        </svg>
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-full mt-2 w-48 bg-panel border border-white/10 rounded shadow-lg z-50 py-1 font-mono text-[11px]">
+          <button
+            onClick={handleSwitchProject}
+            className="w-full text-left px-3 py-1.5 hover:bg-muted/20 text-muted hover:text-primary-text transition-colors"
+          >
+            Change Project Folder...
+          </button>
+          <button
+            onClick={handleImportRoadmap}
+            className="w-full text-left px-3 py-1.5 hover:bg-muted/20 text-muted hover:text-primary-text transition-colors"
+          >
+            Import Roadmap...
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
 
 function ThemeToggle() {
   const theme = useStore((s) => s.theme)
@@ -101,6 +164,9 @@ export function StatusBar() {
 
       {/* Theme toggle */}
       <ThemeToggle />
+
+      {/* Project Menu */}
+      <ProjectMenu />
     </div>
   )
 }

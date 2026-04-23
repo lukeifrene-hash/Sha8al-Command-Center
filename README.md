@@ -21,6 +21,85 @@ Sha8al Command Center (`sha8al-command-center`) is a tracker-driven desktop app 
 
 Packaged desktop distribution and broader install surfaces are future work. The validated install path today is source-based.
 
+## Quick Install
+
+### Windows
+
+1. Install Node.js first from [nodejs.org](https://nodejs.org/en/download/current).
+2. Install Git for Windows from [git-scm.com](https://git-scm.com/downloads/win) if you need Git Bash for cloning or terminal-based Git commands.
+3. Clone or download this repository.
+4. Open the project folder.
+5. Double-click [Build_Run_Windows.bat](/C:/Users/dell/Desktop/dev/Sha8al-Command-Center/Build_Run_Windows.bat).
+6. Wait for the script to install dependencies, build the app, and launch it.
+
+### Quick Launch Later on Windows
+
+After the first setup, you can use one of these root launchers:
+
+1. [Launch_CC_Windows.bat](/C:/Users/dell/Desktop/dev/Sha8al-Command-Center/Launch_CC_Windows.bat)
+Use this for the normal packaged launch when a Windows EXE build is available.
+2. [Launch_CC_Direct_Windows.bat](/C:/Users/dell/Desktop/dev/Sha8al-Command-Center/Launch_CC_Direct_Windows.bat)
+Use this for the direct launch path when you want to open the app quickly from the local build output.
+
+### Linux
+
+1. Clone or download this repository.
+2. Open a terminal in the project folder.
+3. If needed, run `chmod +x ./install.sh`.
+4. Run `./install.sh`.
+5. The installer will check for `node` and `npm`, try to install them if missing, install project dependencies, build the app, and register the `command_center` terminal command.
+
+### Quick Launch Later on Linux
+
+After the first setup, open the app any time with:
+
+```bash
+command_center
+```
+
+The installer creates that command for you and makes it prefer the packaged Linux app when available, with a direct Electron fallback from the local build output.
+
+### macOS
+
+1. Clone or download this repository.
+2. Open Terminal in the project folder.
+3. If needed, run `chmod +x ./Build_Run_Mac.sh ./Launch_CC_Mac.sh ./Launch_CC_Direct_Mac.sh`.
+4. Run `./Build_Run_Mac.sh`.
+5. The script will check for `node` and `npm`, install Homebrew first if needed, install project dependencies, build the app, and then launch it.
+
+### Quick Launch Later on macOS
+
+After the first setup, you can use one of these root launchers:
+
+1. [Launch_CC_Mac.sh](/C:/Users/dell/Desktop/dev/Sha8al-Command-Center/Launch_CC_Mac.sh)
+Use this for the normal packaged macOS launch when a packaged `.app` build is available.
+2. [Launch_CC_Direct_Mac.sh](/C:/Users/dell/Desktop/dev/Sha8al-Command-Center/Launch_CC_Direct_Mac.sh)
+Use this for the direct launch path when you want to open the app quickly from the local build output.
+
+## MCP Server Quick Launch
+
+Use these launchers when you want to start the MCP server itself from this repo. They will install the `mcp-server` package dependencies if needed, build the server if `dist/` is missing, and then start the stdio server in the current terminal.
+
+Run the MCP server from a terminal or from your MCP client configuration. It is a stdio server, so it will keep the terminal open while the client is connected.
+These launchers automatically point the server at this repo by setting `COMMAND_CENTER_PROJECT_ROOT` and `COMMAND_CENTER_PROFILE=generic`.
+
+### Windows
+
+1. Open a terminal in the project folder.
+2. Run [Launch_MCP_Windows.bat](/C:/Users/dell/Desktop/dev/Sha8al-Command-Center/Launch_MCP_Windows.bat).
+
+### Linux
+
+1. Open a terminal in the project folder.
+2. If needed, run `chmod +x ./Launch_MCP_Linux.sh`.
+3. Run `./Launch_MCP_Linux.sh`.
+
+### macOS
+
+1. Open Terminal in the project folder.
+2. If needed, run `chmod +x ./Launch_MCP_Mac.sh`.
+3. Run `./Launch_MCP_Mac.sh`.
+
 For the public `generic` path, `docs/roadmap.md` is mandatory. That file is the task source that feeds the swim lane and task board.
 
 ## How The Commands Work Together
@@ -151,8 +230,10 @@ If script-side tooling ever resolves the live sibling tracker, `COMMAND_CENTER_A
 
 - [Examples Overview](examples/README.md)
 - [Minimal Example Project](examples/minimal-command-center-project/README.md)
+- [Quickstart Sample Project](examples/quickstart-sample-project/README.md)
 
 The minimal example is the fastest way to see the public flow end to end: bootstrap, guard status, parser dry-run, tracker write, and dashboard usage.
+The quickstart sample is the easiest way to explain the agent flow to a new user in one small milestone.
 
 ## Documentation
 
@@ -162,6 +243,7 @@ The minimal example is the fastest way to see the public flow end to end: bootst
 - [Architecture Overview](docs/architecture-overview.md)
 - [Task Workflow](docs/task-workflow.md)
 - [Three-Phase Task Workflow](docs/three-phase-workflow.md)
+- [Quickstart Walkthrough](docs/quickstart-walkthrough.md)
 - [Troubleshooting](docs/troubleshooting.md)
 - [Operator Playbook](playbooks/command-center/README.md)
 - [MCP Server README](mcp-server/README.md)

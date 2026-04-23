@@ -128,8 +128,8 @@ async function run() {
 
   const { command, positional, flags } = parseArgs(rawArgs)
 
-  let toolName: string
-  let toolArgs: Record<string, unknown>
+  let toolName = ''
+  let toolArgs: Record<string, unknown> = {}
 
   switch (command) {
     // ── Read commands ──
@@ -383,7 +383,7 @@ async function run() {
         console.error('submit-milestone-audit requires --payload <json_path|@->')
         process.exit(1)
       }
-      let raw: string
+      let raw = ''
       try {
         if (payloadFlag === '@-') {
           raw = readFileSync(0, 'utf-8')
@@ -394,7 +394,7 @@ async function run() {
         console.error(`Failed to read --payload: ${err instanceof Error ? err.message : String(err)}`)
         process.exit(1)
       }
-      let parsed: Record<string, unknown>
+      let parsed: Record<string, unknown> = {}
       try {
         parsed = JSON.parse(raw)
       } catch (err) {

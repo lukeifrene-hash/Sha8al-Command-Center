@@ -1,7 +1,14 @@
 node_modules/
 out/
 dist/
+release/
+release-rebuild-*/
 .DS_Store
 *.log
+*.lnk
 .env
+.mcp.json
+.codex/
 .command-center-workspace.json
+command-center-tracker.json
+talkstore-tracker.json

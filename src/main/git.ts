@@ -1,14 +1,13 @@
 import { execFile } from 'child_process'
-import { TALKSTORE_ROOT } from './config'
 
 export type GitResult =
   | { status: 'success'; message: string; branch: string; filesChanged: number }
   | { status: 'nothing' }
   | { status: 'error'; error: string }
 
-function git(args: string[]): Promise<string> {
+function git(args: string[], cwd: string): Promise<string> {
   return new Promise((resolve, reject) => {
-    execFile('git', args, { cwd: TALKSTORE_ROOT, maxBuffer: 1024 * 1024 }, (err, stdout, stderr) => {
+    execFile('git', args, { cwd, maxBuffer: 1024 * 1024 }, (err, stdout, stderr) => {
       if (err) reject(new Error(stderr || err.message))
       else resolve(stdout)
     })
@@ -76,21 +75,21 @@ function generateCommitMessage(statusOutput: string): string {
   return `${verb}: update ${summary}${choreDomains.length > 3 ? ' and more' : ''}`
 }
 
-export async function commitAndPush(): Promise<GitResult> {
+export async function commitAndPush(projectRoot: string): Promise<GitResult> {
   try {
-    const status = await git(['status', '--porcelain'])
-    if (!status.trim()) {
+    const statusOutput = await git(['status', '--porcelain'], projectRoot)
+    if (!statusOutput.trim()) {
       return { status: 'nothing' }
     }
 
-    const message = generateCommitMessage(status)
-    await git(['add', '-A'])
-    await git(['commit', '-m', message])
+    const message = generateCommitMessage(statusOutput)
+    await git(['add', '-A'], projectRoot)
+    await git(['commit', '-m', message], projectRoot)
 
-    const branch = (await git(['rev-parse', '--abbrev-ref', 'HEAD'])).trim()
-    await git(['push', 'origin', branch])
+    const branch = (await git(['rev-parse', '--abbrev-ref', 'HEAD'], projectRoot)).trim()
+    await git(['push', 'origin', branch], projectRoot)
 
-    const filesChanged = status.split('\n').filter(Boolean).length
+    const filesChanged = statusOutput.split('\n').filter(Boolean).length
     return { status: 'success', message, branch, filesChanged }
   } catch (err) {
     return { status: 'error', error: err instanceof Error ? err.message : String(err) }

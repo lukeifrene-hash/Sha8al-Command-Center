@@ -7,7 +7,7 @@
   "main": "./out/main/index.js",
   "scripts": {
     "bootstrap": "node scripts/bootstrap.mjs",
-    "postinstall": "bash scripts/patch-electron.sh",
+    "postinstall": "node scripts/patch-electron.mjs",
     "check:docs-completeness": "node scripts/check-docs-completeness.mjs",
     "check:example-readiness": "node scripts/check-example-readiness.mjs",
     "check:public-identity": "node scripts/check-public-identity.mjs",
@@ -36,7 +36,12 @@
     "tracker:seed:aci:dry-run": "node scripts/seed-aci-checklist.mjs --profile=aci --dry-run",
     "dev": "electron-vite dev",
     "build": "electron-vite build",
-    "preview": "electron-vite preview"
+    "preview": "electron-vite preview",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder",
+    "dist:win": "electron-builder --win",
+    "dist:mac": "electron-builder --mac",
+    "dist:linux": "electron-builder --linux"
   },
   "keywords": [
     "sha8al-command-center",
@@ -56,21 +61,56 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@fontsource/inter": "^5.2.8",
     "@fontsource/jetbrains-mono": "^5.2.8",
-    "@tailwindcss/postcss": "^4.2.1",
-    "@vitejs/plugin-react": "^5.1.4",
+    "@tailwindcss/postcss": "^4.2.4",
+    "@vitejs/plugin-react": "^6.0.1",
     "electron-vite": "^5.0.0",
-    "react": "^19.2.4",
-    "react-dom": "^19.2.4",
-    "vite": "^7.3.1",
-    "zustand": "^5.0.11"
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5",
+    "vite": "^8.0.10",
+    "zustand": "^5.0.12"
   },
   "devDependencies": {
-    "@tailwindcss/vite": "^4.2.1",
+    "@tailwindcss/vite": "^4.2.4",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
-    "autoprefixer": "^10.4.27",
-    "electron": "^41.0.0",
-    "tailwindcss": "^4.2.1",
-    "typescript": "^5.9.3"
+    "autoprefixer": "^10.5.0",
+    "electron": "^41.3.0",
+    "electron-builder": "^26.8.1",
+    "tailwindcss": "^4.2.4",
+    "typescript": "^6.0.3"
+  },
+  "build": {
+    "appId": "com.sha8al.commandcenter",
+    "productName": "Sha8al Command Center",
+    "npmRebuild": false,
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "out/**/*",
+      "package.json",
+      "scripts/**/*"
+    ],
+    "mac": {
+      "icon": "build/icon.icns",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "linux": {
+      "icon": "build/icon.png",
+      "target": [
+        "AppImage",
+        "deb"
+      ]
+    }
   }
 }

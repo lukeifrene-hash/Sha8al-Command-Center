@@ -40,6 +40,9 @@ function createWindow(): void {
     minHeight: 800,
     backgroundColor: '#0A0A10',
     titleBarStyle: 'hiddenInset',
+    icon: process.platform === 'linux' || process.platform === 'win32'
+      ? path.join(__dirname, '../../build/icon.png')
+      : undefined,
     trafficLightPosition: { x: 16, y: 16 },
     show: false,
     webPreferences: {
@@ -202,7 +205,11 @@ ipcMain.handle('workspace:generateTracker', async () => {
 })
 
 ipcMain.handle('git:commit-and-push', async () => {
-  return commitAndPush()
+  const status = await getWorkspaceStatus()
+  if (!status.projectRoot) {
+    return { status: 'error', error: 'No project root configured.' }
+  }
+  return commitAndPush(status.projectRoot)
 })
 
 // ─── App Lifecycle ───────────────────────────────────────────────────────────
