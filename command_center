@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SOURCE_PATH="${BASH_SOURCE[0]}"
+while [[ -h "$SOURCE_PATH" ]]; do
+  SOURCE_DIR="$(cd -P "$(dirname "$SOURCE_PATH")" && pwd)"
+  LINK_TARGET="$(readlink "$SOURCE_PATH")"
+  if [[ "$LINK_TARGET" != /* ]]; then
+    SOURCE_PATH="$SOURCE_DIR/$LINK_TARGET"
+  else
+    SOURCE_PATH="$LINK_TARGET"
+  fi
+done
+
+ROOT_DIR="$(cd -P "$(dirname "$SOURCE_PATH")" && pwd)"
+RELEASE_DIR="$ROOT_DIR/release"
+OUT_DIR="$ROOT_DIR/out"
+ELECTRON_EXE="$ROOT_DIR/node_modules/electron/dist/electron"
+APP_TARGET=""
+
+while IFS= read -r candidate; do
+  [[ -n "$candidate" ]] || continue
+  chmod +x "$candidate" 2>/dev/null || true
+  APP_TARGET="$candidate"
+  break
+done < <(find "$RELEASE_DIR" -maxdepth 2 \( -name '*.AppImage' -o -path '*/linux-unpacked/*' -o -name 'sha8al-command-center' -o -name 'Sha8al Command Center' \) -type f 2>/dev/null | sort)
+
+if [[ -z "$APP_TARGET" ]]; then
+  while IFS= read -r dir; do
+    while IFS= read -r candidate; do
+      [[ -n "$candidate" ]] || continue
+      chmod +x "$candidate" 2>/dev/null || true
+      APP_TARGET="$candidate"
+      break 2
+    done < <(find "$dir" -maxdepth 2 \( -name '*.AppImage' -o -path '*/linux-unpacked/*' -o -name 'sha8al-command-center' -o -name 'Sha8al Command Center' \) -type f 2>/dev/null | sort)
+  done < <(find "$ROOT_DIR" -maxdepth 1 -type d -name 'release-rebuild-*' | sort -r)
+fi
+
+if [[ -n "$APP_TARGET" ]]; then
+  nohup "$APP_TARGET" >/dev/null 2>&1 &
+  exit 0
+fi
+
+if [[ ! -x "$ELECTRON_EXE" ]]; then
+  printf '%s\n' "ERROR: Electron runtime was not found at $ELECTRON_EXE."
+  printf '%s\n' "Run ./install.sh first."
+  exit 1
+fi
+
+if [[ ! -f "$OUT_DIR/main/index.js" ]]; then
+  printf '%s\n' "ERROR: Built app output was not found at $OUT_DIR/main/index.js."
+  printf '%s\n' "Run ./install.sh first."
+  exit 1
+fi
+
+nohup "$ELECTRON_EXE" "$ROOT_DIR" >/dev/null 2>&1 &

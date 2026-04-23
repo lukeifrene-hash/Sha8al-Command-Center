@@ -17,6 +17,21 @@ npm install
 npm run build
 ```
 
+## Quick Launch
+
+From the repo root, you can use one of these helper launchers:
+
+- Windows: [Launch_MCP_Windows.bat](/C:/Users/dell/Desktop/dev/Sha8al-Command-Center/Launch_MCP_Windows.bat)
+- Linux: `./Launch_MCP_Linux.sh`
+- macOS: `./Launch_MCP_Mac.sh`
+
+Each launcher installs `mcp-server` dependencies if needed, builds `dist/` if missing, and then starts the stdio server in the current terminal.
+They also set `COMMAND_CENTER_PROJECT_ROOT` to the repo root and `COMMAND_CENTER_PROFILE=generic` for this project.
+
+Important:
+- this is a stdio MCP server, not a desktop window
+- keep the terminal open while your MCP client is connected
+
 ## CLI
 
 After building, you can inspect the local CLI help with:

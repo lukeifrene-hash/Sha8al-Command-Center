@@ -68,3 +68,21 @@ node dist/cli.js help
   - the CLI currently loads the tracker layer before printing help
   - on a clean external install, that tracker layer needs a project root
 - This is a CLI-help bug, not a requirement for the Electron app onboarding flow.
+
+## Windows packaging fails with `app.asar` locked
+
+- If `electron-builder` fails while removing or recreating `release\win-unpacked\resources\app.asar`, the unpacked app is usually still running from the previous build.
+- Close the running packaged app, any Explorer windows opened inside `release\win-unpacked`, and retry.
+- The recommended local Windows path is `build-and-run.bat`, which now closes the unpacked app before cleaning and rebuilding.
+- If you are packaging manually, wait a moment after closing the app before rerunning `npm.cmd run dist:win`.
+- Defender, antivirus, or indexing can also hold the file briefly. If the lock keeps happening, pause scanning for the project folder long enough to confirm that is the cause.
+
+## PowerShell blocks `npm.ps1`
+
+- If PowerShell reports that `npm.ps1` cannot be loaded because running scripts is disabled, switch to:
+
+```powershell
+npm.cmd run dist:win
+```
+
+- The same workaround applies to other `npm run ...` commands when you are invoking them from PowerShell on a machine with a restrictive execution policy.
