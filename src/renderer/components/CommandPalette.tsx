@@ -33,6 +33,7 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
       { id: 'tab:agent-hub', label: 'Agent Hub', shortcut: '⌘3', category: 'Views', icon: '⚡', action: () => setActiveTab('agent-hub') },
       { id: 'tab:calendar', label: 'Calendar', shortcut: '⌘4', category: 'Views', icon: '▦', action: () => setActiveTab('calendar') },
       { id: 'tab:qa', label: 'QA Verification', shortcut: '⌘5', category: 'Views', icon: '◎', action: () => setActiveTab('qa') },
+      { id: 'tab:analytics', label: 'Analytics', shortcut: '⌘6', category: 'Views', icon: '◈', action: () => setActiveTab('analytics') },
       { id: 'theme:toggle', label: 'Toggle Theme', shortcut: '⌘⇧L', category: 'Preferences', icon: '🌓', action: () => useStore.getState().toggleTheme() },
     ]
 

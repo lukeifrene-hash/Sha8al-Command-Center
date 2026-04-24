@@ -111,6 +111,84 @@ interface EventAPI {
   dispatch(event: { type: string; payload: unknown }): Promise<{ success: boolean }>
 }
 
+interface PluginManifest {
+  id: string
+  name: string
+  version: string
+  description: string
+  author: string
+  hooks: string[]
+  configSchema?: Record<string, unknown>
+  enabled: boolean
+  builtIn: boolean
+}
+
+interface PluginAPI {
+  list(): Promise<PluginManifest[]>
+  get(id: string): Promise<PluginManifest | null>
+  setEnabled(id: string, enabled: boolean): Promise<boolean>
+  updateConfig(id: string, config: Record<string, unknown>): Promise<boolean>
+  getConfig(id: string): Promise<Record<string, unknown>>
+}
+
+interface TaskContext {
+  taskId: string
+  taskLabel: string
+  milestoneTitle: string
+  domain: string
+  complexity: string
+  relatedFiles: string[]
+  recentGitActivity: GitActivityEntry[]
+  similarTasks: SimilarTaskEntry[]
+  agentMemory: AgentMemoryEntry[]
+  suggestedPrompt: string
+  contextSummary: string
+}
+
+interface GitActivityEntry {
+  hash: string
+  message: string
+  author: string
+  date: string
+  files: string[]
+}
+
+interface SimilarTaskEntry {
+  taskId: string
+  label: string
+  similarity: number
+  outcome: 'completed' | 'failed' | 'blocked'
+  completionTime?: string
+}
+
+interface AgentMemoryEntry {
+  agentId: string
+  pattern: string
+  learnedAt: string
+  relevance: number
+  context: string
+}
+
+interface PromptSuggestion {
+  original: string
+  improved: string
+  reason: string
+}
+
+interface ContextAPI {
+  build(params: {
+    taskId: string
+    taskLabel: string
+    milestoneTitle: string
+    domain: string
+    complexity: string
+    prompt?: string
+    contextFiles?: string[]
+  }): Promise<TaskContext>
+  storeMemory(agentId: string, pattern: string, context: string, relevance: number): Promise<{ success: boolean }>
+  suggestPrompt(prompt: string, failurePatterns: string[]): Promise<PromptSuggestion[]>
+}
+
 interface Window {
   api: {
     platform: string
@@ -120,5 +198,7 @@ interface Window {
     agent: AgentAPI
     wave: WaveAPI
     events: EventAPI
+    plugin: PluginAPI
+    context: ContextAPI
   }
 }

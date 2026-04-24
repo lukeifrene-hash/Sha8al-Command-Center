@@ -117,7 +117,7 @@ function resolveProfileId(): ConsumerProfileId {
   return 'generic'
 }
 
-function resolveProjectRoot(profile: ConsumerProfileManifest): string {
+function resolveProjectRoot(profile: ConsumerProfileManifest): string | null {
   const configured = readSetting(profile.project_root.env_keys)
   if (configured) return resolve(configured)
 
@@ -125,10 +125,7 @@ function resolveProjectRoot(profile: ConsumerProfileManifest): string {
     return SIBLING_TALKSTORE_ROOT
   }
 
-  throw new Error(
-    'Project root is not set. Configure COMMAND_CENTER_PROJECT_ROOT ' +
-    '(or TALKSTORE_PROJECT_ROOT for legacy compatibility).'
-  )
+  return null
 }
 
 function resolveTrackerFile(projectRoot: string, profile: ConsumerProfileManifest): string {
@@ -191,26 +188,30 @@ export const PROFILE_ID = resolveProfileId()
 export const PROFILE = loadProfileManifest(PROFILE_ID)
 export const PROJECT_ROOT = resolveProjectRoot(PROFILE)
 export const TALKSTORE_ROOT = PROJECT_ROOT
-export const TRACKER_FILE = resolveTrackerFile(PROJECT_ROOT, PROFILE)
-export const TRACKER_PATH = join(PROJECT_ROOT, TRACKER_FILE)
+export const TRACKER_FILE = PROJECT_ROOT ? resolveTrackerFile(PROJECT_ROOT, PROFILE) : null
+export const TRACKER_PATH = (PROJECT_ROOT && TRACKER_FILE) ? join(PROJECT_ROOT, TRACKER_FILE) : null
 
-const TASKS_PATH = resolveTasksPath(PROJECT_ROOT, PROFILE)
+const TASKS_PATH = PROJECT_ROOT ? resolveTasksPath(PROJECT_ROOT, PROFILE) : null
 
 export const DOCS_PATHS = {
   tasks: TASKS_PATH,
   // Preserve the legacy export name used by src/main/parser.ts.
   roadmap: TASKS_PATH,
-  checklist: resolveDocPath(
-    PROJECT_ROOT,
-    ['COMMAND_CENTER_CHECKLIST_DOC', 'CHECKLIST_DOC'],
-    [PROFILE.docs.checklist.default_path]
-  ),
-  manifesto: resolveOptionalDocPath(
-    PROJECT_ROOT,
-    ['COMMAND_CENTER_MANIFESTO_DOC', 'MANIFESTO_DOC'],
-    PROFILE.docs.manifesto.default_path
-  ),
-  roadmap_optional: PROFILE.docs.roadmap_optional
+  checklist: PROJECT_ROOT
+    ? resolveDocPath(
+        PROJECT_ROOT,
+        ['COMMAND_CENTER_CHECKLIST_DOC', 'CHECKLIST_DOC'],
+        [PROFILE.docs.checklist.default_path]
+      )
+    : null,
+  manifesto: PROJECT_ROOT
+    ? resolveOptionalDocPath(
+        PROJECT_ROOT,
+        ['COMMAND_CENTER_MANIFESTO_DOC', 'MANIFESTO_DOC'],
+        PROFILE.docs.manifesto.default_path
+      )
+    : null,
+  roadmap_optional: (PROJECT_ROOT && PROFILE.docs.roadmap_optional)
     ? resolveOptionalDocPath(
         PROJECT_ROOT,
         ['COMMAND_CENTER_ROADMAP_DOC', 'ROADMAP_DOC'],

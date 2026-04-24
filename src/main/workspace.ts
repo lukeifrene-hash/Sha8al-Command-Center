@@ -2,6 +2,8 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from
 import { dirname, join, resolve } from 'path'
 
 import { parseAndGenerate } from './parser'
+import { loadProjectConfig, type ProjectConfig } from './project-config'
+import { parseRoadmapGeneric, parseChecklistGeneric, generateTrackerStateGeneric } from './generic-parser'
 
 const COMMAND_CENTER_ROOT = resolve(__dirname, '../..')
 const WORKSPACE_CONFIG_PATH = join(COMMAND_CENTER_ROOT, '.command-center-workspace.json')
@@ -110,10 +112,11 @@ export async function getWorkspaceStatus(): Promise<WorkspaceStatus> {
 
   try {
     const config = await import('./config')
+    const hasProjectRoot = Boolean(config.PROJECT_ROOT)
     return {
-      configured: true,
-      source: 'env',
-      profile: config.PROFILE_ID || null,
+      configured: hasProjectRoot,
+      source: hasProjectRoot ? 'env' : null,
+      profile: (config.PROFILE_ID as any) || null,
       projectRoot: config.PROJECT_ROOT || null,
       trackerPath: config.TRACKER_PATH || null,
       trackerExists: Boolean(config.TRACKER_PATH && existsSync(config.TRACKER_PATH)),
@@ -188,6 +191,47 @@ export function generateTrackerForWorkspace(status: WorkspaceStatus) {
     throw new Error(`Roadmap not found at ${status.roadmapPath}.`)
   }
 
+  // Try new config-driven generic parser first
+  let config: ProjectConfig | null = null
+  try {
+    config = loadProjectConfig(status.projectRoot)
+  } catch {
+    // No sha8al.config.yaml found — fall back to legacy parser
+  }
+
+  if (config) {
+    const roadmapContent = readFileSync(status.roadmapPath, 'utf-8')
+    const { milestones, parseErrors } = parseRoadmapGeneric(roadmapContent, config)
+
+    if (parseErrors.length > 0) {
+      console.warn('Parser warnings:', parseErrors)
+    }
+
+    const checklistPath = join(status.projectRoot, 'docs/submission-checklist.md')
+    let checklist = { categories: [] as import('./generic-parser').ChecklistCategory[] }
+    if (existsSync(checklistPath)) {
+      checklist = parseChecklistGeneric(readFileSync(checklistPath, 'utf-8'), config)
+    }
+
+    const tracker = generateTrackerStateGeneric(config, milestones, checklist)
+    writeFileSync(status.trackerPath, JSON.stringify(tracker, null, 2), 'utf-8')
+
+    return {
+      state: tracker,
+      counts: {
+        milestones: tracker.milestones.length,
+        subtasks: tracker.milestones.reduce((s, m) => s + m.subtasks.length, 0),
+        categories: tracker.submission_checklist.categories.length,
+        checklistItems: tracker.submission_checklist.categories.reduce((s, c) => s + c.items.length, 0),
+      },
+      status: resolveConfigPaths(loadWorkspaceConfig() || {
+        projectRoot: status.projectRoot,
+        profile: 'generic',
+      }),
+    }
+  }
+
+  // Legacy fallback
   const checklistPath = join(status.projectRoot, 'docs/submission-checklist.md')
   const result = parseAndGenerate({
     roadmapPath: status.roadmapPath,

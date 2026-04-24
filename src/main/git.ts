@@ -8,6 +8,9 @@ export type GitResult =
 
 function git(args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
+    if (!TALKSTORE_ROOT) {
+      return reject(new Error('Project root is not set. Git commands cannot be executed.'))
+    }
     execFile('git', args, { cwd: TALKSTORE_ROOT, maxBuffer: 1024 * 1024 }, (err, stdout, stderr) => {
       if (err) reject(new Error(stderr || err.message))
       else resolve(stdout)

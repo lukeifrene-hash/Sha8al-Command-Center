@@ -7,6 +7,7 @@ import { TaskBoard } from './views/TaskBoard'
 import { AgentHubPlaceholder } from './views/AgentHubPlaceholder'
 import { CalendarView } from './views/CalendarView'
 import { QAView } from './views/QAView'
+import { AnalyticsView } from './views/AnalyticsView'
 import { OnboardingView } from './views/OnboardingView'
 import { CommandPalette } from './components/CommandPalette'
 import { NotificationCenter } from './components/NotificationCenter'
@@ -82,6 +83,7 @@ export default function App() {
         {activeTab === 'agent-hub' && <AgentHubPlaceholder />}
         {activeTab === 'calendar' && <CalendarView />}
         {activeTab === 'qa' && <QAView />}
+        {activeTab === 'analytics' && <AnalyticsView />}
       </div>
     </div>
   )

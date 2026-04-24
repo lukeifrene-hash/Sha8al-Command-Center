@@ -1,0 +1,167 @@
+# Sha8al Command Center — Project Configuration
+# This file defines the project structure, phases, agents, and lanes.
+# Copy this into your project root and customize for your workflow.
+
+project_name: "My Project"
+project_version: "1.0.0"
+project_description: "Describe your project here"
+
+# ─── Schedule ───────────────────────────────────────────────────────
+start_date: "2025-01-06"
+total_weeks: 10
+sprint_length_weeks: 2
+
+# ─── Phases ───────────────────────────────────────────────────────
+phases:
+  - id: foundation
+    name: Foundation
+    start_week: 1
+    end_week: 2
+    color: "#FF9F0A"
+    description: "Architecture, setup, and core infrastructure"
+    required_before_next:
+      - "All infrastructure deployed"
+      - "CI/CD pipeline passing"
+
+  - id: build
+    name: Build
+    start_week: 3
+    end_week: 7
+    color: "#30D158"
+    description: "Feature development and integration"
+    required_before_next:
+      - "Core features implemented"
+      - "Integration tests passing"
+
+  - id: finalize
+    name: Finalize
+    start_week: 8
+    end_week: 10
+    color: "#0A84FF"
+    description: "QA, polish, documentation, and release"
+    required_before_next:
+      - "All QA checklists passed"
+      - "Documentation complete"
+
+# ─── Lanes (Swim Lanes) ────────────────────────────────────────────
+lanes:
+  - id: infra
+    name: Infrastructure
+    color: "#FF9F0A"
+    order: 0
+
+  - id: backend
+    name: Backend
+    color: "#30D158"
+    order: 1
+
+  - id: frontend
+    name: Frontend
+    color: "#0A84FF"
+    order: 2
+
+  - id: data
+    name: Data & AI
+    color: "#BF5AF2"
+    order: 3
+
+  - id: docs
+    name: Documentation
+    color: "#8B919F"
+    order: 4
+
+  - id: qa
+    name: QA & Testing
+    color: "#FF453A"
+    order: 5
+
+# ─── Milestone Patterns ───────────────────────────────────────────
+milestone_patterns:
+  section_markers:
+    - "# THE BUILD ROADMAP"
+    - "# PARALLEL TRACK"
+  milestone_regex: "^#{1,3}\\s*(?:WEEKS?\\s*\\d+(?:\\s*[—–-]\\s*\\d+)?\\s*[—–-]\\s*)?(.+)"
+  week_regex: "WEEK\\s*(\\d+)"
+  subtask_marker: "-"
+
+# ─── Agents ────────────────────────────────────────────────────────
+agents:
+  - id: explorer
+    name: Explorer
+    type: sub-agent
+    color: "#FF9F0A"
+    permissions:
+      - read_project
+      - read_tracker
+      - write_notes
+    model: "claude-sonnet-4-20250514"
+    cost_profile: medium
+
+  - id: researcher
+    name: Researcher
+    type: sub-agent
+    color: "#BF5AF2"
+    permissions:
+      - read_project
+      - read_tracker
+      - write_notes
+    model: "claude-sonnet-4-20250514"
+    cost_profile: medium
+
+  - id: builder
+    name: Builder
+    type: sub-agent
+    color: "#30D158"
+    permissions:
+      - read_project
+      - write_code
+      - write_tests
+      - read_tracker
+      - write_tracker
+    model: "claude-sonnet-4-20250514"
+    cost_profile: high
+
+  - id: auditor
+    name: Auditor
+    type: sub-agent
+    color: "#FF453A"
+    permissions:
+      - read_project
+      - read_tracker
+      - write_audit
+    model: "claude-sonnet-4-20250514"
+    cost_profile: medium
+
+  - id: operator
+    name: Operator
+    type: human
+    color: "#FFFFFF"
+    permissions:
+      - all
+
+# ─── Audit Rules ──────────────────────────────────────────────────
+audit_rules:
+  - id: architecture_review
+    category: structural
+    severity: critical
+    description: "Architecture decisions are documented and reviewed"
+    criteria:
+      - "No unapproved breaking changes"
+      - "Dependencies match approved list"
+
+  - id: security_scan
+    category: security
+    severity: critical
+    description: "Security vulnerabilities identified and mitigated"
+    criteria:
+      - "No known CVEs in dependencies"
+      - "Secrets not committed to repository"
+
+  - id: code_quality
+    category: correctness
+    severity: normal
+    description: "Code quality meets project standards"
+    criteria:
+      - "Test coverage >= 80%"
+      - "Linting passes with zero warnings"
+      - "No TODO comments in production code"

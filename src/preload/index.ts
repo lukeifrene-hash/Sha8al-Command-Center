@@ -96,4 +96,35 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('bus:dispatch', event),
   },
 
+  // Plugin system
+  plugin: {
+    list: (): Promise<import('../main/plugin-system').PluginManifest[]> =>
+      ipcRenderer.invoke('plugin:list'),
+    get: (id: string): Promise<import('../main/plugin-system').PluginManifest | null> =>
+      ipcRenderer.invoke('plugin:get', id),
+    setEnabled: (id: string, enabled: boolean): Promise<boolean> =>
+      ipcRenderer.invoke('plugin:setEnabled', id, enabled),
+    updateConfig: (id: string, config: Record<string, unknown>): Promise<boolean> =>
+      ipcRenderer.invoke('plugin:updateConfig', id, config),
+    getConfig: (id: string): Promise<Record<string, unknown>> =>
+      ipcRenderer.invoke('plugin:getConfig', id),
+  },
+
+  // Context builder
+  context: {
+    build: (params: {
+      taskId: string
+      taskLabel: string
+      milestoneTitle: string
+      domain: string
+      complexity: string
+      prompt?: string
+      contextFiles?: string[]
+    }): Promise<import('../main/context-builder').TaskContext> =>
+      ipcRenderer.invoke('context:build', params),
+    storeMemory: (agentId: string, pattern: string, context: string, relevance: number): Promise<{ success: boolean }> =>
+      ipcRenderer.invoke('context:storeMemory', agentId, pattern, context, relevance),
+    suggestPrompt: (prompt: string, failurePatterns: string[]): Promise<import('../main/context-builder').PromptSuggestion[]> =>
+      ipcRenderer.invoke('context:suggestPrompt', prompt, failurePatterns),
+  },
 })

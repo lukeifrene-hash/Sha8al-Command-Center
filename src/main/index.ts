@@ -25,6 +25,13 @@ import {
   abortWave,
   getWaveStatus,
 } from './agent-runtime'
+import {
+  pluginRegistry,
+  initializeBuiltInPlugins,
+  wireEventBusToPlugins,
+  type PluginManifest,
+} from './plugin-system'
+import { contextBuilder, type TaskContext } from './context-builder'
 
 let mainWindow: BrowserWindow | null = null
 let fileWatcher: fs.FSWatcher | null = null
@@ -175,6 +182,8 @@ ipcMain.handle('workspace:chooseProjectFolder', async () => {
   }
 
   const status = configureWorkspace(result.filePaths[0])
+  contextBuilder.setProjectRoot(result.filePaths[0])
+  pluginRegistry.setConfigPath(status.trackerPath ?? '')
   await restartFileWatcher()
   return { canceled: false, status }
 })
@@ -290,9 +299,58 @@ ipcMain.handle('bus:dispatch', async (_event, eventPayload: { type: string; payl
   return { success: true }
 })
 
+// ─── Plugin System IPC ──────────────────────────────────────────────────────
+
+ipcMain.handle('plugin:list', async () => {
+  return pluginRegistry.listPlugins()
+})
+
+ipcMain.handle('plugin:get', async (_event, id: string) => {
+  return pluginRegistry.getPlugin(id)
+})
+
+ipcMain.handle('plugin:setEnabled', async (_event, id: string, enabled: boolean) => {
+  return pluginRegistry.setPluginEnabled(id, enabled)
+})
+
+ipcMain.handle('plugin:updateConfig', async (_event, id: string, config: Record<string, unknown>) => {
+  return pluginRegistry.updatePluginConfig(id, config)
+})
+
+ipcMain.handle('plugin:getConfig', async (_event, id: string) => {
+  return pluginRegistry.getPluginConfig(id)
+})
+
+// ─── Context Builder IPC ────────────────────────────────────────────────────
+
+ipcMain.handle('context:build', async (_event, params: {
+  taskId: string
+  taskLabel: string
+  milestoneTitle: string
+  domain: string
+  complexity: string
+  prompt?: string
+  contextFiles?: string[]
+}) => {
+  return contextBuilder.buildContext(params)
+})
+
+ipcMain.handle('context:storeMemory', async (_event, agentId: string, pattern: string, context: string, relevance: number) => {
+  contextBuilder.storeMemory(agentId, pattern, context, relevance)
+  return { success: true }
+})
+
+ipcMain.handle('context:suggestPrompt', async (_event, prompt: string, failurePatterns: string[]) => {
+  return contextBuilder.suggestPromptImprovements(prompt, failurePatterns)
+})
+
 // ─── App Lifecycle ───────────────────────────────────────────────────────────
 
 app.whenReady().then(async () => {
+  // Initialize plugin system
+  initializeBuiltInPlugins()
+  wireEventBusToPlugins()
+
   createWindow()
   await restartFileWatcher()
 

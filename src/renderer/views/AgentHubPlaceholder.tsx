@@ -96,6 +96,7 @@ function LeftColumn({ tracker, synced }: { tracker: TrackerState; synced: boolea
         total={total} status={status} blocked={blocked} nextMilestone={nextMilestone}
       />
       <TodaySummary tracker={tracker} />
+      <PluginHubPanel />
     </div>
   )
 }
@@ -771,6 +772,107 @@ function Row({ label, value, mono, green, red }: {
     <div className="flex items-center justify-between">
       <span className="text-muted">{label}</span>
       <span className={`${mono ? 'font-mono' : ''} ${colorClass}`}>{value}</span>
+    </div>
+  )
+}
+
+// ─── Plugin Hub Panel ────────────────────────────────────────────────────────
+
+interface PluginInfo {
+  id: string
+  name: string
+  version: string
+  description: string
+  enabled: boolean
+  builtIn: boolean
+  hooks: string[]
+}
+
+function PluginHubPanel() {
+  const [plugins, setPlugins] = useState<PluginInfo[]>([])
+  const [expanded, setExpanded] = useState<string | null>(null)
+
+  useEffect(() => {
+    window.api.plugin.list().then((list) => {
+      setPlugins(list as PluginInfo[])
+    }).catch(() => {})
+  }, [])
+
+  const handleToggle = useCallback(async (id: string, enabled: boolean) => {
+    const success = await window.api.plugin.setEnabled(id, !enabled)
+    if (success) {
+      setPlugins((prev) =>
+        prev.map((p) => p.id === id ? { ...p, enabled: !enabled } : p)
+      )
+    }
+  }, [])
+
+  const enabledCount = plugins.filter((p) => p.enabled).length
+
+  return (
+    <div className="rounded-lg border border-border p-4">
+      <h3 className="text-xs font-bold tracking-wider text-muted mb-3">PLUGIN HUB</h3>
+
+      {plugins.length === 0 && (
+        <div className="text-[10px] text-muted text-center py-2">No plugins registered</div>
+      )}
+
+      <div className="space-y-2">
+        {plugins.map((plugin) => (
+          <div key={plugin.id}>
+            <div className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-surface/60 transition-colors">
+              <button
+                onClick={() => setExpanded(expanded === plugin.id ? null : plugin.id)}
+                className="flex items-center gap-2 flex-1 min-w-0 text-left"
+              >
+                <svg
+                  className={`w-3 h-3 text-muted transition-transform ${expanded === plugin.id ? 'rotate-90' : ''}`}
+                  viewBox="0 0 12 12" fill="currentColor"
+                >
+                  <path d="M4 2l4 4-4 4z" />
+                </svg>
+                <span className="text-xs text-white font-medium truncate">{plugin.name}</span>
+                <span className="text-[9px] text-muted font-mono">v{plugin.version}</span>
+              </button>
+
+              {/* Toggle switch */}
+              <button
+                onClick={() => handleToggle(plugin.id, plugin.enabled)}
+                className={`relative w-7 h-4 rounded-full transition-colors flex-shrink-0 ${
+                  plugin.enabled ? 'bg-on-track' : 'bg-surface-container-highest'
+                }`}
+              >
+                <div
+                  className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-transform ${
+                    plugin.enabled ? 'translate-x-3.5' : 'translate-x-0.5'
+                  }`}
+                />
+              </button>
+            </div>
+
+            {/* Expanded details */}
+            {expanded === plugin.id && (
+              <div className="ml-4 pl-2 border-l border-border/50 mt-1 mb-2 space-y-1.5 px-2 py-1.5">
+                <p className="text-[10px] text-muted leading-relaxed">{plugin.description}</p>
+                <div className="flex flex-wrap gap-1">
+                  {plugin.hooks.map((hook) => (
+                    <span key={hook} className="text-[8px] font-mono px-1.5 py-0.5 rounded bg-accent/10 text-accent-light">
+                      {hook}
+                    </span>
+                  ))}
+                </div>
+                {plugin.builtIn && (
+                  <span className="text-[9px] text-muted font-semibold tracking-wider">BUILT-IN</span>
+                )}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-2 text-[9px] text-muted">
+        {enabledCount}/{plugins.length} enabled
+      </div>
     </div>
   )
 }
